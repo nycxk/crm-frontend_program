@@ -189,3 +189,36 @@ export function updateRole(id: number, data: Partial<RoleSaveParams>): Promise<n
 export function deleteRole(id: number): Promise<null> {
   return del(`/api/system/roles/${id}`)
 }
+
+// 系统参数
+export interface SystemParamRecord {
+  id: number
+  code: string
+  paramKey: string
+  paramValue: string
+  paramType: string
+  unit: string | null
+  createdBy: number
+  createdByName: string
+  createTime: string
+  updatedTime: string
+}
+
+export interface SystemParamQuery {
+  page?: number
+  size?: number
+  keyword?: string
+  code?: string
+  paramKey?: string
+  paramType?: string
+}
+
+export function getParamList(query: SystemParamQuery): Promise<PageResult<SystemParamRecord>> {
+  return get('/api/system/params', query)
+}
+export function getParamDetail(id: number): Promise<SystemParamRecord> {
+  return get(`/api/system/params/${id}`)
+}
+export function updateParamValue(id: number, paramValue: string): Promise<null> {
+  return put(`/api/system/params/${id}`, { paramValue })
+}

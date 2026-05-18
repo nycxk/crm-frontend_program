@@ -1,6 +1,6 @@
 # CRM Backend API 文档
 
-> **说明**：包含认证授权、用户个人中心、文件管理、系统设置（人员/部门/权限）等接口。除标注「公开」外，均需在请求头携带 `Authorization: Bearer {token}`。
+> **说明**：包含认证授权、用户个人中心、文件管理、系统设置（人员/部门/权限）、渠道管理、客户、联系人、来访、房源及成交等接口。除标注「公开」外，均需在请求头携带 `Authorization: Bearer {token}`。
 
 ---
 
@@ -10,6 +10,12 @@
 2. [用户 API](#2-用户-api)
 3. [文件 API](#3-文件-api)
 4. [系统设置 API](#4-系统设置-api)
+5. [渠道管理 API](#5-渠道管理-api)
+6. [客户管理 API](#6-客户管理-api)
+6A. [联系人 API](#6a-联系人-api)
+7. [客户来访 API](#7-客户来访-api)
+8. [房源管理 API](#8-房源管理-api)
+9. [成交管理 API](#9-成交管理-api)
 
 ---
 
@@ -451,12 +457,13 @@ Response:
     "sizeBytes": 102400,
     "fileKind": "IMAGE",
     "bizType": "avatar",
-    "url": "/uploads/2026/04/10/abc123def456.png",
-    "createdAt": "2026-04-10T10:30:00.000Z"
+    "url": "/uploads/2026/04/10/abc123def456.png"
   },
   "timestamp": 1775798820500
 }
 ```
+
+> 列表/详情接口返回的 `FileRecord` 含 `createTime`、`updateTime`、`deletedTime`（未删除时 `deletedTime` 为 null）。
 
 ### 3.2 文件分页列表
 
@@ -1108,7 +1115,9 @@ Request（字段均可选）:
   "moduleIds": [1, 2, 3]
 }
 
-说明: moduleIds 传入时会全量覆盖该角色的模块绑定。
+说明:
+- moduleIds 传入时会全量覆盖该角色的模块绑定
+- `SYSTEM_ADMIN`（系统管理员）角色**禁止修改** moduleIds
 
 Response:
 {
@@ -1124,7 +1133,9 @@ Response:
 ```
 DELETE /api/system/roles/{id}
 
-说明: 若角色已分配给用户（user_roles 存在记录）则禁止删除。
+说明:
+- `SYSTEM_ADMIN`（系统管理员）角色**禁止删除**
+- 其他角色若已分配给用户（user_roles 存在记录）则禁止删除
 
 Response:
 {
@@ -1142,10 +1153,1408 @@ Response:
 | 1001 | 人员不存在 |
 | 1004 | 手机号/邮箱/用户名已存在 |
 | 1006 | 用户已禁用 |
-| 2001 | 不能禁用自己、部门有下级/人员、角色已分配用户等 |
+| 2001 | 不能禁用自己、部门有下级/人员、角色已分配用户、系统管理员禁止删除/改权限等 |
 | 2002 | 部门/角色/模块不存在 |
 | 2003 | 部门名称、角色编码重复 |
 | 40002 | 参数格式错误（如部门类型非法、手机号格式错误） |
+
+---
+
+## 5 渠道管理 API
+
+渠道分为**渠道类型**（`channel` 表）与**二级实例数据**。当 `instanceType=agency` 时（如「中介公司」），二级数据为 `agency` 表中的中介公司信息；`instanceType=none` 时无二级数据。
+
+> 已有库升级请执行 `sql/migrate_channel_agency.sql`。
+
+### 5.0 接口总览
+
+#### 渠道类型 `/api/channels`
+
+| 方法 | 端点 | 说明 |
+|------|------|------|
+| GET | `/api/channels` | 渠道类型分页列表 |
+| GET | `/api/channels/{id}` | 渠道类型详情（中介公司渠道含 agencies） |
+| POST | `/api/channels` | 新增渠道类型 |
+| PUT | `/api/channels/{id}` | 修改渠道类型 |
+| DELETE | `/api/channels/{id}` | 软删除渠道类型 |
+
+#### 中介公司（二级）`/api/channels/{channelId}/agencies`
+
+仅当渠道 `instanceType=agency` 时可操作。
+
+| 方法 | 端点 | 说明 |
+|------|------|------|
+| GET | `/api/channels/{channelId}/agencies` | 中介公司分页列表 |
+| GET | `/api/channels/{channelId}/agencies/{agencyId}` | 中介公司详情 |
+| POST | `/api/channels/{channelId}/agencies` | 新增中介公司 |
+| PUT | `/api/channels/{channelId}/agencies/{agencyId}` | 修改中介公司 |
+| DELETE | `/api/channels/{channelId}/agencies/{agencyId}` | 软删除中介公司 |
+
+### 5.1 数据模型说明
+
+| 字段 | 表 | 说明 |
+|------|-----|------|
+| `typeName` | channel | 渠道类型名称，如「中介公司」「老带新」 |
+| `instanceType` | channel | `agency`：可挂中介公司；`none`：无二级数据 |
+| `companyName` | agency | 中介公司名称 |
+| `channelId` | agency | 所属渠道类型 ID |
+
+**初始渠道类型**（见 `init_data.sql`）：中介公司（agency）、老带新、市场自来、全员营销、泛销（后四者为 none）。
+
+### 5.2 渠道类型
+
+#### 5.2.1 渠道类型分页列表
+
+```
+GET /api/channels?page=1&size=10&keyword=中介&instanceType=agency
+
+Query Parameters:
+- page: 页码，默认 1
+- size: 每页条数，默认 10
+- keyword: 类型名称模糊搜索（可选）
+- instanceType: agency / none（可选）
+
+Response:
+{
+  "code": 200,
+  "message": "操作成功",
+  "data": {
+    "records": [
+      {
+        "id": 1,
+        "typeName": "中介公司",
+        "instanceType": "agency",
+        "hasAgency": true,
+        "agencyCount": 3,
+        "createTime": "2026-05-15T08:00:00",
+        "updateTime": "2026-05-15T08:00:00",
+        "agencies": []
+      },
+      {
+        "id": 2,
+        "typeName": "老带新",
+        "instanceType": "none",
+        "hasAgency": false,
+        "agencyCount": 0,
+        "createTime": "2026-05-15T08:00:00",
+        "updateTime": "2026-05-15T08:00:00",
+        "agencies": []
+      }
+    ],
+    "total": 5,
+    "size": 10,
+    "current": 1,
+    "pages": 1
+  },
+  "timestamp": 1775798820500
+}
+```
+
+> 列表接口 `agencies` 为空数组；`agencyCount` 仅在 `hasAgency=true` 时有意义。
+
+#### 5.2.2 渠道类型详情
+
+```
+GET /api/channels/{id}
+
+说明: instanceType=agency 时，data.agencies 返回该渠道下全部中介公司（未分页）。
+
+Response（中介公司渠道示例）:
+{
+  "code": 200,
+  "message": "操作成功",
+  "data": {
+    "id": 1,
+    "typeName": "中介公司",
+    "instanceType": "agency",
+    "hasAgency": true,
+    "agencyCount": 2,
+    "agencies": [
+      {
+        "id": 1,
+        "channelId": 1,
+        "companyName": "某某房产中介",
+        "createTime": "2026-05-15T09:00:00",
+        "updateTime": "2026-05-15T09:00:00"
+      }
+    ],
+    "createTime": "2026-05-15T08:00:00",
+    "updateTime": "2026-05-15T08:00:00"
+  },
+  "timestamp": 1775798820500
+}
+```
+
+#### 5.2.3 新增渠道类型
+
+```
+POST /api/channels
+
+Request:
+{
+  "typeName": "中介公司",
+  "instanceType": "agency"
+}
+
+字段说明:
+- typeName: 必填，类型名称，不可与未删除记录重复
+- instanceType: 可选，默认 none；agency=可挂中介公司，none=无二级数据
+
+Response:
+{
+  "code": 200,
+  "message": "操作成功",
+  "data": 1,
+  "timestamp": 1775798820500
+}
+```
+
+#### 5.2.4 修改渠道类型
+
+```
+PUT /api/channels/{id}
+
+Request（字段均可选）:
+{
+  "typeName": "中介渠道",
+  "instanceType": "agency"
+}
+
+说明:
+- 若渠道下仍有中介公司，不可将 instanceType 从 agency 改为 none
+
+Response:
+{
+  "code": 200,
+  "message": "操作成功",
+  "data": null,
+  "timestamp": 1775798820500
+}
+```
+
+#### 5.2.5 删除渠道类型
+
+```
+DELETE /api/channels/{id}
+
+说明:
+- 软删除（写入 deleted_time）
+- 已被来访(visit)或成交(deal_data)引用时不可删
+- instanceType=agency 且下属仍有中介公司时，需先删除中介公司
+
+Response:
+{
+  "code": 200,
+  "message": "操作成功",
+  "data": null,
+  "timestamp": 1775798820500
+}
+```
+
+### 5.3 中介公司（二级数据）
+
+#### 5.3.1 中介公司分页列表
+
+```
+GET /api/channels/{channelId}/agencies?page=1&size=10&keyword=房产
+
+Query Parameters:
+- page, size: 分页，默认 1 / 10
+- keyword: 公司名称模糊搜索（可选）
+
+说明: channelId 对应渠道的 instanceType 必须为 agency，否则返回参数错误。
+
+Response:
+{
+  "code": 200,
+  "message": "操作成功",
+  "data": {
+    "records": [
+      {
+        "id": 1,
+        "channelId": 1,
+        "companyName": "某某房产中介",
+        "createTime": "2026-05-15T09:00:00",
+        "updateTime": "2026-05-15T09:00:00"
+      }
+    ],
+    "total": 1,
+    "size": 10,
+    "current": 1,
+    "pages": 1
+  },
+  "timestamp": 1775798820500
+}
+```
+
+#### 5.3.2 中介公司详情
+
+```
+GET /api/channels/{channelId}/agencies/{agencyId}
+
+Response: data 为 AgencyVO 对象，结构同列表单条记录。
+```
+
+#### 5.3.3 新增中介公司
+
+```
+POST /api/channels/{channelId}/agencies
+
+Request:
+{
+  "companyName": "某某房产中介"
+}
+
+字段说明:
+- companyName: 必填，同一渠道下不可重复
+
+Response:
+{
+  "code": 200,
+  "message": "操作成功",
+  "data": 1,
+  "timestamp": 1775798820500
+}
+```
+
+#### 5.3.4 修改中介公司
+
+```
+PUT /api/channels/{channelId}/agencies/{agencyId}
+
+Request（字段均可选）:
+{
+  "companyName": "某某房产中介有限公司"
+}
+
+Response:
+{
+  "code": 200,
+  "message": "操作成功",
+  "data": null,
+  "timestamp": 1775798820500
+}
+```
+
+#### 5.3.5 删除中介公司
+
+```
+DELETE /api/channels/{channelId}/agencies/{agencyId}
+
+说明: 已被来访记录(visit)引用为渠道实例时不可删除。
+
+Response:
+{
+  "code": 200,
+  "message": "操作成功",
+  "data": null,
+  "timestamp": 1775798820500
+}
+```
+
+### 5.4 渠道管理常见错误
+
+| code | 场景 |
+|------|------|
+| 2001 | 渠道被业务引用、下属仍有中介公司、中介公司被来访引用、渠道类型变更冲突等 |
+| 2002 | 渠道或中介公司不存在 |
+| 2003 | 渠道类型名称或公司名称重复 |
+| 40002 | instanceType 非法、非 agency 渠道操作 agencies 接口等 |
+
+---
+
+## 6 客户管理 API
+
+| 方法 | 端点 | 说明 |
+|------|------|------|
+| GET | `/api/clients` | 客户分页列表（数据权限 + 联系人电话脱敏） |
+| GET | `/api/clients/{id}` | 客户详情（含联系人、来访记录） |
+| POST | `/api/clients` | 新增客户（可关联联系人） |
+| PUT | `/api/clients/{id}` | 修改客户 |
+| DELETE | `/api/clients/{id}` | 软删除客户 |
+| GET | `/api/clients/{id}/contacts` | 查询客户关联联系人 |
+| POST | `/api/clients/{id}/contacts` | 绑定联系人 |
+| DELETE | `/api/clients/{id}/contacts/{contactId}` | 解绑联系人 |
+
+### 6.1 数据权限与电话脱敏
+
+客户、联系人模块采用**相同**的数据权限与电话脱敏规则（均依据记录上的 `createdBy` 字段）。
+
+**数据权限**
+
+| 角色 | 可见范围 |
+|------|----------|
+| `SALES`（成员） | 仅自己创建的记录（`createdBy` = 当前用户） |
+| `PROJECT_ADMIN`（项目管理员） | 本部门成员创建的记录 |
+| `OPERATE_ADMIN`（经营部管理员） | 本经营部及下属项目部成员创建的记录 |
+| `SYSTEM_ADMIN` | 全部 |
+
+**电话脱敏**（客户关联的 `contacts`、联系人列表/详情、`GET /api/clients/{id}/contacts`）：
+
+- 仅当该联系人或客户的 `createdBy` 等于当前登录用户时，返回完整手机号
+- 否则 `contactPhone` 为脱敏格式，如 `138****8000`
+
+> 在客户接口中嵌套展示的联系人，脱敏依据**客户**的 `createdBy`；在联系人模块接口中，脱敏依据**联系人**自身的 `createdBy`。
+
+### 6.2 新增客户
+
+```
+POST /api/clients
+
+方式一 — 关联已有联系人（传 contactIds）:
+{
+  "clientName": "张三",
+  "idType": "身份证",
+  "idNumber": "110101199001011234",
+  "contactIds": [1, 2]
+}
+
+方式二 — 同步新增联系人并关联（传 newContacts）:
+{
+  "clientName": "张三",
+  "newContacts": [
+    {
+      "contactName": "李四",
+      "contactPhone": "13800138001",
+      "model": "客户",
+      "remark": "主要联系人"
+    }
+  ]
+}
+
+方式一 + 方式二 可同时使用:
+{
+  "clientName": "张三",
+  "contactIds": [1],
+  "newContacts": [
+    {
+      "contactName": "王五",
+      "contactPhone": "13800138002"
+    }
+  ]
+}
+
+说明:
+- clientName: 必填
+- idType / idNumber: 可选，但若填写须同时填写；组合唯一不可重复
+- contactIds: 可选，已有联系人 ID 列表
+- newContacts: 可选，新建联系人信息列表；元素字段同 POST /api/contacts（contactName、contactPhone 必填）
+- contactIds 与 newContacts 至少传其一或都不传；都传时先创建 newContacts 再与 contactIds 一并关联
+- 创建人自动记录为当前登录用户
+- 新建客户状态默认为 `mine`（我的客户）
+
+Response.data: 新建客户 ID（long）
+```
+
+### 6.2A 客户状态说明
+
+| 状态值 | 含义 | 说明 |
+|--------|------|------|
+| `mine` | 我的客户 | 新录入客户，默认状态 |
+| `tenant` | 租户 | 成交后自动变更 |
+| `public_pool` | 公海 | 超保护期等场景转入（列表接口不展示） |
+
+客户列表接口仅查询 `mine`、`tenant`；成交创建成功后，关联客户自动更新为 `tenant`。
+
+### 6.3 客户分页列表
+
+```
+GET /api/clients?page=1&size=10&keyword=张&status=mine
+
+Query Parameters:
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| page | int | 否 | 页码，默认 1 |
+| size | int | 否 | 每页条数，默认 10 |
+| keyword | string | 否 | 模糊匹配客户姓名、证件类型、证件编号 |
+| status | string | 否 | `mine` 或 `tenant`；不传则返回二者（不含公海） |
+
+排序: 按 updateTime 倒序
+
+Response:
+{
+  "code": 200,
+  "message": "操作成功",
+  "data": {
+    "records": [
+      {
+        "id": 1,
+        "clientName": "张三",
+        "idType": "身份证",
+        "idNumber": "110101199001011234",
+        "createdBy": 2,
+        "clientStatus": "mine",
+        "clientStatusName": "我的客户",
+        "visitCount": 3,
+        "contacts": [
+          {
+            "id": 10,
+            "contactName": "李四",
+            "contactPhone": "138****8000",
+            "model": "客户",
+            "remark": "主要联系人",
+            "createTime": "2026-05-15T09:00:00",
+            "updateTime": "2026-05-15T09:00:00"
+          }
+        ],
+        "createTime": "2026-05-10T10:00:00",
+        "updateTime": "2026-05-15T14:30:00"
+      }
+    ],
+    "total": 1,
+    "size": 10,
+    "current": 1,
+    "pages": 1
+  },
+  "timestamp": 1775798820500
+}
+```
+
+**records[] 字段说明**
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | long | 客户 ID |
+| clientName | string | 客户姓名 |
+| idType | string | 证件类型，可为 null |
+| idNumber | string | 证件编号，可为 null |
+| createdBy | long | 创建人用户 ID |
+| clientStatus | string | 状态：`mine` / `tenant` / `public_pool` |
+| clientStatusName | string | 状态中文名 |
+| visitCount | int | 该客户未删除来访记录数 |
+| contacts | array | 关联联系人列表，结构见 [ContactVO](#contactvo) |
+| createTime | datetime | 创建时间 |
+| updateTime | datetime | 更新时间 |
+
+> `contacts[].contactPhone` 按 [6.1 脱敏规则](#61-数据权限与电话脱敏) 返回；非本人创建的客户为 `138****8000` 格式。
+
+### 6.4 客户详情
+
+```
+GET /api/clients/{id}
+
+说明: 需具备该客户的数据查看权限（见 6.1）；无权限返回 403。
+
+Response:
+{
+  "code": 200,
+  "message": "操作成功",
+  "data": {
+    "id": 1,
+    "clientName": "张三",
+    "idType": "身份证",
+    "idNumber": "110101199001011234",
+    "createdBy": 2,
+    "createTime": "2026-05-10T10:00:00",
+    "updateTime": "2026-05-15T14:30:00",
+    "contacts": [
+      {
+        "id": 10,
+        "contactName": "李四",
+        "contactPhone": "13800138000",
+        "model": "客户",
+        "remark": "主要联系人",
+        "createTime": "2026-05-15T09:00:00",
+        "updateTime": "2026-05-15T09:00:00"
+      }
+    ],
+    "visits": [
+      {
+        "id": 100,
+        "visitDate": "2026-05-15",
+        "clientId": 1,
+        "clientName": "张三",
+        "houseIds": [1, 2],
+        "houses": [
+          { "id": 1, "houseName": "A栋101" },
+          { "id": 2, "houseName": "B栋202" }
+        ],
+        "channelId": 1,
+        "channelTypeName": "中介公司",
+        "channelInstanceId": 5,
+        "channelInstanceName": "某某房产中介",
+        "detailDescription": "首次到访",
+        "requirementsConfig": { "面积": "500", "预算": "100万" },
+        "createTime": "2026-05-15T11:00:00",
+        "updateTime": "2026-05-15T11:00:00"
+      }
+    ]
+  },
+  "timestamp": 1775798820500
+}
+```
+
+**data 字段说明**
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | long | 客户 ID |
+| clientName | string | 客户姓名 |
+| idType | string | 证件类型 |
+| idNumber | string | 证件编号 |
+| createdBy | long | 创建人用户 ID |
+| contacts | array | 关联联系人，结构见 [ContactVO](#contactvo) |
+| visits | array | 该客户全部来访记录（按 visitDate、updateTime 倒序），结构见 [VisitVO](#visitvo) |
+| createTime | datetime | 创建时间 |
+| updateTime | datetime | 更新时间 |
+
+### 6.5 客户关联联系人列表
+
+```
+GET /api/clients/{id}/contacts
+
+说明: 返回结构与详情中 contacts 相同；电话脱敏规则同 6.1。
+
+Response:
+{
+  "code": 200,
+  "message": "操作成功",
+  "data": [
+    {
+      "id": 10,
+      "contactName": "李四",
+      "contactPhone": "138****8000",
+      "model": "客户",
+      "remark": "主要联系人",
+      "createTime": "2026-05-15T09:00:00",
+      "updateTime": "2026-05-15T09:00:00"
+    }
+  ],
+  "timestamp": 1775798820500
+}
+```
+
+### 6.6 绑定 / 解绑联系人
+
+```
+POST /api/clients/{id}/contacts
+{ "contactIds": [1, 2] }
+
+DELETE /api/clients/{id}/contacts/{contactId}
+```
+
+---
+
+## 6A 联系人 API
+
+| 方法 | 端点 | 说明 |
+|------|------|------|
+| GET | `/api/contacts` | 联系人分页列表（数据权限 + 电话脱敏） |
+| GET | `/api/contacts/{id}` | 联系人详情（数据权限 + 电话脱敏） |
+| POST | `/api/contacts` | 新增联系人 |
+| PUT | `/api/contacts/{id}` | 修改联系人 |
+| DELETE | `/api/contacts/{id}` | 软删除联系人 |
+
+<a id="contactvo"></a>
+
+**ContactVO（联系人对象）**
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | long | 联系人 ID |
+| contactName | string | 联系人姓名 |
+| contactPhone | string | 联系电话；非本人创建的记录为脱敏格式 |
+| model | string | 从属类型，如「客户」「中介公司」，可为 null |
+| remark | string | 备注，可为 null |
+| createdBy | long | 创建人用户 ID |
+| createTime | datetime | 创建时间 |
+| updateTime | datetime | 更新时间 |
+
+### 6A.1 新增联系人
+
+```
+POST /api/contacts
+
+Request:
+{
+  "contactName": "李四",
+  "contactPhone": "13800138000",
+  "model": "客户",
+  "remark": "备注"
+}
+
+说明:
+- contactName、contactPhone 必填，手机号为 11 位
+- contactPhone 全局唯一（未删除记录内）
+- 创建人自动记录为当前登录用户
+
+Response.data: 新建联系人 ID（long）
+```
+
+### 6A.2 联系人分页列表
+
+```
+GET /api/contacts?page=1&size=10&keyword=李&phone=13800138000
+
+Query Parameters:
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| page | int | 否 | 页码，默认 1 |
+| size | int | 否 | 每页条数，默认 10 |
+| keyword | string | 否 | 模糊匹配姓名、电话、备注 |
+| phone | string | 否 | 手机号精确匹配 |
+
+排序: 按 updateTime 倒序
+
+数据权限: 同 [6.1](#61-数据权限与电话脱敏)，仅返回当前用户有权查看的联系人。
+
+Response:
+{
+  "code": 200,
+  "message": "操作成功",
+  "data": {
+    "records": [
+      {
+        "id": 10,
+        "contactName": "李四",
+        "contactPhone": "138****8000",
+        "model": "客户",
+        "remark": "主要联系人",
+        "createdBy": 2,
+        "createTime": "2026-05-15T09:00:00",
+        "updateTime": "2026-05-15T09:00:00"
+      }
+    ],
+    "total": 1,
+    "size": 10,
+    "current": 1,
+    "pages": 1
+  },
+  "timestamp": 1775798820500
+}
+```
+
+> 示例中 `contactPhone` 为脱敏格式；`createdBy` 为当前用户时返回完整手机号。
+
+### 6A.3 联系人详情
+
+```
+GET /api/contacts/{id}
+
+说明: 需具备该联系人的数据查看权限；无权限返回 403。
+
+Response:
+{
+  "code": 200,
+  "message": "操作成功",
+  "data": {
+    "id": 10,
+    "contactName": "李四",
+    "contactPhone": "13800138000",
+    "model": "客户",
+    "remark": "主要联系人",
+    "createdBy": 2,
+    "createTime": "2026-05-15T09:00:00",
+    "updateTime": "2026-05-15T09:00:00"
+  },
+  "timestamp": 1775798820500
+}
+```
+
+字段说明同 [ContactVO](#contactvo)。`contactPhone` 脱敏规则同 [6.1](#61-数据权限与电话脱敏)。
+
+---
+
+## 7 客户来访 API
+
+| 方法 | 端点 | 说明 |
+|------|------|------|
+| GET | `/api/visits` | 来访分页列表 |
+| GET | `/api/visits/{id}` | 来访详情 |
+| POST | `/api/visits` | 新增来访 |
+| PUT | `/api/visits/{id}` | 修改来访 |
+| DELETE | `/api/visits/{id}` | 软删除来访 |
+
+<a id="visitvo"></a>
+
+**VisitVO（来访记录对象）**
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | long | 来访 ID |
+| visitDate | date | 跟进/来访日期，格式 `yyyy-MM-dd` |
+| clientId | long | 关联客户 ID |
+| clientName | string | 客户姓名（列表/详情 enrich 填充） |
+| houseIds | long[] | 带看房源 ID 列表，可为 null 或空数组 |
+| houses | array | 房源摘要列表，元素见下表 |
+| channelId | long | 渠道类型 ID，可为 null |
+| channelTypeName | string | 渠道类型名称（enrich 填充） |
+| channelInstanceId | long | 渠道实例 ID（中介公司/客户/用户/联系人等），可为 null |
+| channelInstanceName | string | 渠道实例展示名称（创建时解析或手填） |
+| detailDescription | string | 详情说明 |
+| requirementsConfig | object | 需求清单 JSON，键值自定义 |
+| createTime | datetime | 创建时间 |
+| updateTime | datetime | 更新时间 |
+
+**houses[] 元素（HouseBriefVO）**
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | long | 房源 ID |
+| houseName | string | 房源名称 |
+
+### 7.1 来访分页列表
+
+```
+GET /api/visits?page=1&size=10&clientId=1&channelId=1&visitDateFrom=2026-01-01&visitDateTo=2026-12-31
+
+Query Parameters:
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| page | int | 否 | 页码，默认 1 |
+| size | int | 否 | 每页条数，默认 10 |
+| clientId | long | 否 | 按客户 ID 筛选 |
+| channelId | long | 否 | 按渠道类型 ID 筛选 |
+| visitDateFrom | date | 否 | 来访日期起（含），`yyyy-MM-dd` |
+| visitDateTo | date | 否 | 来访日期止（含），`yyyy-MM-dd` |
+
+排序: 按 updateTime 倒序
+
+Response:
+{
+  "code": 200,
+  "message": "操作成功",
+  "data": {
+    "records": [
+      {
+        "id": 100,
+        "visitDate": "2026-05-15",
+        "clientId": 1,
+        "clientName": "张三",
+        "houseIds": [1, 2],
+        "houses": [
+          { "id": 1, "houseName": "A栋101" },
+          { "id": 2, "houseName": "B栋202" }
+        ],
+        "channelId": 1,
+        "channelTypeName": "中介公司",
+        "channelInstanceId": 5,
+        "channelInstanceName": "某某房产中介",
+        "detailDescription": "首次到访",
+        "requirementsConfig": { "面积": "500", "预算": "100万" },
+        "createTime": "2026-05-15T11:00:00",
+        "updateTime": "2026-05-15T11:00:00"
+      }
+    ],
+    "total": 1,
+    "size": 10,
+    "current": 1,
+    "pages": 1
+  },
+  "timestamp": 1775798820500
+}
+```
+
+字段说明见 [VisitVO](#visitvo)。`houses` 根据 `houseIds` 批量查询填充；ID 不存在或已删除的房源不会出现在 `houses` 中。
+
+### 7.2 来访详情
+
+```
+GET /api/visits/{id}
+
+Response:
+{
+  "code": 200,
+  "message": "操作成功",
+  "data": {
+    "id": 100,
+    "visitDate": "2026-05-15",
+    "clientId": 1,
+    "clientName": "张三",
+    "houseIds": [1, 2],
+    "houses": [
+      { "id": 1, "houseName": "A栋101" },
+      { "id": 2, "houseName": "B栋202" }
+    ],
+    "channelId": 1,
+    "channelTypeName": "中介公司",
+    "channelInstanceId": 5,
+    "channelInstanceName": "某某房产中介",
+    "detailDescription": "首次到访",
+    "requirementsConfig": { "面积": "500", "预算": "100万" },
+    "createTime": "2026-05-15T11:00:00",
+    "updateTime": "2026-05-15T11:00:00"
+  },
+  "timestamp": 1775798820500
+}
+```
+
+结构与列表单条 `records[]` 一致，字段说明见 [VisitVO](#visitvo)。
+
+### 7.3 新增来访
+
+```
+POST /api/visits
+
+Request:
+{
+  "visitDate": "2026-05-15",
+  "clientId": 1,
+  "houseIds": [1, 2],
+  "channelId": 1,
+  "channelInstanceId": 1,
+  "detailDescription": "首次到访",
+  "requirementsConfig": { "面积": "500", "预算": "100万" }
+}
+
+渠道实例规则（channelId 对应渠道类型）:
+| 渠道类型 | instanceType / 名称 | channelInstanceId |
+|----------|---------------------|-------------------|
+| 中介公司 | agency | agency 表 ID |
+| 老带新 | - | 客户 client ID |
+| 全员营销 | - | 用户 users ID |
+| 泛销 | - | 联系人 contact ID |
+| 市场自来等 | none | 不需传，可填 channelInstanceName |
+
+Response.data 为新建来访 ID
+```
+
+---
+
+## 8 房源管理 API
+
+| 方法 | 端点 | 说明 |
+|------|------|------|
+| GET | `/api/houses` | 房源分页列表（按项目部数据权限） |
+| GET | `/api/houses/{id}` | 房源详情 |
+| POST | `/api/houses` | 新增房源 |
+| PUT | `/api/houses/{id}` | 修改房源 |
+| DELETE | `/api/houses/{id}` | 软删除房源 |
+| POST | `/api/houses/{id}/guide-prices/rollback` | 回退最新指导价版本 |
+| POST | `/api/houses/{id}/assessed-prices/rollback` | 回退最新评估价版本 |
+| POST | `/api/price-batches/{id}/rollback` | 回退批量调价批次 |
+
+**批量调价（`price-batches`）**
+
+| 方法 | 端点 | 说明 |
+|------|------|------|
+| GET | `/api/price-batches/template` | 下载批量调价 Excel 模板 |
+| POST | `/api/price-batches/upload` | 上传 Excel 批量调价 |
+| GET | `/api/price-batches` | 批量调价记录分页 |
+| GET | `/api/price-batches/{id}` | 批量调价记录详情 |
+| POST | `/api/price-batches/{id}/rollback` | 回退批量调价批次 |
+
+### 8.0 指导价 / 评估价（版本说明）
+
+| 概念 | 说明 |
+|------|------|
+| 版本字段 | 版本号存于 `guide_price_data.version`、`assessed_price_data.version`，**按房源、按价格类型**从 1 递增 |
+| 展示名称 | `versionName` 为展示用，如 `V1`、`V2`（与 `version` 对应） |
+| 单条维护 | 创建房源、修改房源时手工调价：仅写价格表，`priceVisionId` 为 `null` |
+| 批量调整 | 批量上传 Excel 写入 `price_vision_data` 并关联 `priceVisionId`；见 [8.7](#87-批量调价) |
+
+**价格记录对象**（列表 `guidePrice`/`assessedPrice`、详情 `guidePrices[]`/`assessedPrices[]` 元素结构一致）:
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | long | 价格记录 ID |
+| priceValue | int | 价格数值 |
+| version | int | 房源内版本号（指导价与评估价各自独立） |
+| priceVisionId | long \| null | 批量调整批次 ID；单条维护为 null |
+| versionName | string | 展示名称，如 `V2` |
+| effectiveDate | date | 生效日期 |
+| expiryDate | date \| null | 失效日期；当前有效记录常为 null |
+| createTime | datetime | 创建时间 |
+| updateTime | datetime | 更新时间 |
+
+### 8.1 数据权限
+
+按房源所属项目部（`departmentId`）过滤，规则与客户模块角色一致：
+
+| 角色 | 可见范围 |
+|------|----------|
+| `SALES` / `PROJECT_ADMIN` | 本部门（项目部）下的房源 |
+| `OPERATE_ADMIN` | 本经营部下所有项目部的房源 |
+| `SYSTEM_ADMIN` | 全部房源 |
+
+新建/修改时 `departmentId` 须为有效项目部，且在上述可见范围内。
+
+### 8.2 新增房源
+
+```
+POST /api/houses
+
+Request:
+{
+  "houseName": "A栋101",
+  "rentableArea": 500.00,
+  "nonRentableArea": 50.00,
+  "totalArea": 550.00,
+  "certificatedArea": 480.00,
+  "uncertificatedArea": 70.00,
+  "location": "XX路88号",
+  "description": "临街商铺",
+  "images": ["/uploads/2026/05/house1.jpg"],
+  "departmentId": 2,
+  "guidePrice": {
+    "priceValue": 12000,
+    "effectiveDate": "2026-05-15",
+    "expiryDate": null
+  },
+  "assessedPrice": {
+    "priceValue": 11500,
+    "effectiveDate": "2026-05-15",
+    "expiryDate": null
+  }
+}
+
+说明:
+- houseName、departmentId、guidePrice、assessedPrice 必填
+- departmentId 须为项目部（department_type=project）
+- images 为图片 URL 数组，通常由文件上传接口获得
+- 指导价/评估价各新增一条记录，`version` 均为 **1**（两类价格版本互不影响）
+- `guidePrice` / `assessedPrice` 结构：`priceValue`、`effectiveDate` 必填；`expiryDate` 可选
+
+Response.data: 新建房源 ID（long）
+```
+
+### 8.3 房源分页列表
+
+```
+GET /api/houses?page=1&size=10&keyword=A栋&departmentId=2
+
+Query Parameters:
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| page | int | 否 | 页码，默认 1 |
+| size | int | 否 | 每页条数，默认 10 |
+| keyword | string | 否 | 模糊匹配房源名称、坐落、描述 |
+| departmentId | long | 否 | 按项目部筛选（须在权限范围内） |
+
+排序: 按 updateTime 倒序
+
+说明:
+- 每条房源附带当前**最高版本**指导价、评估价（`version` 最大的一条）；无记录时为 `null`
+- 价格字段结构见 [8.0 价格记录对象](#80-指导价--评估价版本说明)
+
+Response:
+{
+  "code": 200,
+  "message": "操作成功",
+  "data": {
+    "records": [
+      {
+        "id": 1,
+        "houseName": "A栋101",
+        "rentableArea": 500.00,
+        "nonRentableArea": 50.00,
+        "totalArea": 550.00,
+        "certificatedArea": 480.00,
+        "uncertificatedArea": 70.00,
+        "location": "XX路88号",
+        "description": "临街商铺",
+        "images": ["/uploads/2026/05/house1.jpg"],
+        "departmentId": 2,
+        "departmentName": "城东项目部",
+        "guidePrice": {
+          "id": 3,
+          "priceValue": 12500,
+          "version": 2,
+          "priceVisionId": null,
+          "versionName": "V2",
+          "effectiveDate": "2026-06-01",
+          "expiryDate": null,
+          "createTime": "2026-06-01T10:00:00",
+          "updateTime": "2026-06-01T10:00:00"
+        },
+        "assessedPrice": {
+          "id": 2,
+          "priceValue": 11800,
+          "version": 1,
+          "priceVisionId": null,
+          "versionName": "V1",
+          "effectiveDate": "2026-05-15",
+          "expiryDate": null,
+          "createTime": "2026-05-15T10:00:00",
+          "updateTime": "2026-05-15T10:00:00"
+        },
+        "createTime": "2026-05-15T10:00:00",
+        "updateTime": "2026-05-15T10:00:00"
+      }
+    ],
+    "total": 1,
+    "size": 10,
+    "current": 1,
+    "pages": 1
+  },
+  "timestamp": 1775798820500
+}
+```
+
+### 8.4 房源详情
+
+```
+GET /api/houses/{id}
+
+Response.data:
+{
+  "house": { /* 房源基础字段，同列表 records[]，不含 guidePrice/assessedPrice */ },
+  "guidePrices": [
+    {
+      "id": 3,
+      "priceValue": 12500,
+      "version": 2,
+      "priceVisionId": null,
+      "versionName": "V2",
+      "effectiveDate": "2026-06-01",
+      "expiryDate": null,
+      "createTime": "2026-06-01T10:00:00",
+      "updateTime": "2026-06-01T10:00:00"
+    },
+    {
+      "id": 1,
+      "priceValue": 12000,
+      "version": 1,
+      "priceVisionId": null,
+      "versionName": "V1",
+      "effectiveDate": "2026-05-15",
+      "expiryDate": "2026-05-31",
+      "createTime": "2026-05-15T10:00:00",
+      "updateTime": "2026-06-01T10:00:00"
+    }
+  ],
+  "assessedPrices": [ /* 结构同 guidePrices */ ]
+}
+
+说明:
+- `guidePrices`、`assessedPrices` 为全量历史，按 `version` **降序**排列；最高版本为数组首条
+- 无权限返回 403
+```
+
+### 8.5 修改 / 删除
+
+```
+PUT /api/houses/{id}
+
+Request（基础字段均可选）:
+{
+  "houseName": "A栋101-更新",
+  "rentableArea": 520.00,
+  "guidePrice": {
+    "priceValue": 12500,
+    "effectiveDate": "2026-06-01"
+  },
+  "assessedPrice": {
+    "priceValue": 11800,
+    "effectiveDate": "2026-06-01"
+  }
+}
+
+说明:
+- **仅修改基础信息**：不传 `guidePrice`/`assessedPrice`，或传 `null`/空对象 `{}`，**不新增**价格版本
+- **追加价格版本**：对应对象中 `priceValue` 与 `effectiveDate` **均有值** 时，该类型 `version` 自动 +1 并插入新记录；缺一则不处理该类型
+- 修改基础信息不会覆盖历史价格
+- 新价格生效时，将同类型当前未失效记录（`expiryDate` 为 null）的 `expiryDate` 设为新生效日前一天
+
+示例（只改名称，不调价）:
+```json
+{ "houseName": "A栋101-更新" }
+```
+
+DELETE /api/houses/{id}
+```
+
+删除约束：若房源被来访、成交、指导价、评估价或内部招租引用，则无法删除。
+
+### 8.6 价格版本回退
+
+#### 8.6.1 回退房源最新指导价
+
+```
+POST /api/houses/{id}/guide-prices/rollback
+
+说明:
+- 软删除当前最高 `version` 的指导价记录
+- 将回退后当前最高版本的 `expiryDate` 置为 `null`（恢复为有效）
+- 已是 V1 时返回业务错误
+- 若该版本已被成交引用（`deal_data.guide_price_id`），无法回退
+
+Response.data: 回退后的当前有效指导价（价格记录对象，结构见 8.0）
+```
+
+示例响应:
+
+```json
+{
+  "code": 200,
+  "message": "操作成功",
+  "data": {
+    "id": 1,
+    "priceValue": 12000,
+    "version": 1,
+    "priceVisionId": null,
+    "versionName": "V1",
+    "effectiveDate": "2026-05-15",
+    "expiryDate": null,
+    "createTime": "2026-05-15T10:00:00",
+    "updateTime": "2026-06-02T10:00:00"
+  }
+}
+```
+
+#### 8.6.2 回退房源最新评估价
+
+```
+POST /api/houses/{id}/assessed-prices/rollback
+
+说明: 同 8.6.1，作用于评估价；成交引用字段为 `assessed_price_id`
+```
+
+#### 8.6.3 回退批量调价批次
+
+```
+POST /api/price-batches/{id}/rollback
+
+说明:
+- 软删除该批次下全部价格记录（`price_vision_id` = 批次 ID）
+- 按涉及房源恢复各房源当前最高有效版本的 `expiryDate` 为 `null`
+- 批次 `status` 更新为 `rolled_back`；已回退批次不可重复操作
+- 批次内任一条价格被成交引用则整批无法回退
+- 须对批次涉及的全部房源具备数据权限
+
+Response: 无 data
+```
+
+### 8.7 批量调价
+
+#### 8.7.1 下载模板
+
+```
+GET /api/price-batches/template?priceType=guide
+
+Query:
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| priceType | string | 是 | `guide` 指导价 / `assessed` 评估价 |
+
+Response: Excel 文件流（`.xlsx`）
+
+模板列:
+| 列名 | 必填 | 说明 |
+|------|------|------|
+| 房源ID | 是 | 系统房源主键 |
+| 房源名称 | 否 | 仅作核对，与系统不一致将报错 |
+| 价格(元) | 是 | 整数 |
+| 生效日期 | 是 | `yyyy-MM-dd` |
+| 失效日期 | 否 | `yyyy-MM-dd`，留空表示长期有效 |
+```
+
+#### 8.7.2 上传批量调价
+
+```
+POST /api/price-batches/upload
+Content-Type: multipart/form-data
+
+Form:
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| priceType | string | 是 | `guide` / `assessed` |
+| file | file | 是 | `.xlsx`，单次最多 5000 行 |
+| batchName | string | 否 | 批次名称，默认自动生成 |
+| remark | string | 否 | 备注 |
+
+说明:
+- 同一文件内房源 ID 不可重复
+- 须在房源数据权限范围内
+- 全部校验通过后事务写入：创建批次记录 + 各房源新增一条价格（`version`+1，`priceVisionId`=批次ID）
+- `houseSnapshot` 记录各房源调价后的版本号，供回退使用
+- `sourceFile` 保存上传文件相对路径（`/uploads/price-batch/...`）
+
+Response.data: 批量批次对象（见 8.7.4）
+```
+
+#### 8.7.3 批量记录分页
+
+```
+GET /api/price-batches?page=1&size=10&priceType=guide&status=applied&keyword=6月
+
+Query:
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| page | int | 否 | 默认 1 |
+| size | int | 否 | 默认 10 |
+| priceType | string | 否 | `guide` / `assessed` |
+| status | string | 否 | `applied` / `rolled_back` |
+| keyword | string | 否 | 模糊匹配批次名称、编号 |
+
+数据权限:
+- 系统管理员：全部批次
+- 其他角色：本人上传的批次，或涉及本权限范围内房源的批次
+
+Response.data: 分页，records 为批次对象列表（不含完整 houseSnapshot 时可仅含 affectedHouseCount）
+```
+
+#### 8.7.4 批量记录详情
+
+```
+GET /api/price-batches/{id}
+
+Response.data 批次对象:
+{
+  "id": 10,
+  "batchName": "指导价批量调整-2026-06-01",
+  "batchCode": "G-20260601103000-A1B2",
+  "priceType": "guide",
+  "priceTypeLabel": "指导价",
+  "status": "applied",
+  "statusLabel": "已应用",
+  "sourceFile": "/uploads/price-batch/2026/06/01/abc.xlsx",
+  "uploadUserId": 2,
+  "uploadUserName": "admin",
+  "uploadDate": "2026-06-01",
+  "remark": "6月调价",
+  "affectedHouseCount": 2,
+  "houseSnapshot": [
+    { "houseId": 1, "guideVersion": 3, "assessedVersion": null },
+    { "houseId": 2, "guideVersion": 2, "assessedVersion": null }
+  ],
+  "createTime": "2026-06-01T10:30:00",
+  "updateTime": "2026-06-01T10:30:00"
+}
+```
+
+#### 8.7.5 回退批量批次
+
+同 [8.6.3](#863-回退批量调价批次)。
+
+---
+
+## 9 成交管理 API
+
+| 方法 | 端点 | 说明 |
+|------|------|------|
+| GET | `/api/deals` | 成交分页列表 |
+| GET | `/api/deals/{id}` | 成交详情 |
+| POST | `/api/deals` | 新增成交 |
+| PUT | `/api/deals/{id}` | 修改成交 |
+| POST | `/api/deals/{id}/checkout` | 登记实际退租 |
+| DELETE | `/api/deals/{id}` | 软删除成交 |
+
+### 9.1 数据权限
+
+按 **成交业务员**（`dealBusinessUserId`）过滤，规则与客户模块角色一致：
+
+| 角色 | 可见范围 |
+|------|----------|
+| `SALES` | 仅本人作为成交业务员的记录 |
+| `PROJECT_ADMIN` | 本部门成员作为成交业务员的记录 |
+| `OPERATE_ADMIN` | 本经营部及下属项目部成员的记录 |
+| `SYSTEM_ADMIN` | 全部 |
+
+新建成交时 `dealBusinessUserId` 自动设为当前登录用户；`contactBusinessUserId` 默认与成交业务员相同，可指定其他业务员。
+
+### 9.2 新增成交
+
+```
+POST /api/deals
+
+Request:
+{
+  "houseIds": [1, 2],
+  "clientIds": [1],
+  "channelTypeId": 1,
+  "channelInstanceId": 5,
+  "channelInstanceName": null,
+  "rentalArea": 500.00,
+  "contractTotalAmount": 1200000.00,
+  "contractSignDate": "2026-05-15",
+  "contractStartDate": "2026-06-01",
+  "contractEndDate": "2027-05-31",
+  "dealRemark": "首年签约",
+  "contactBusinessUserId": 2
+}
+
+说明:
+- houseIds、clientIds：至少各选 1 个，须在数据权限内
+- channelTypeId：必填；渠道实例规则同来访（见 §7.3）
+- rentalArea：可选；不传则按所选房源适租面积之和自动计算
+- guidePriceId、assessedPriceId：系统按主房源（houseIds[0]）及签订日期自动匹配时点指导价/评估价
+- 日期约束：起租日期 ≥ 签订日期，退租日期 ≥ 起租日期
+- 成交成功后，关联客户状态自动更新为 `tenant`（租户）
+
+Response.data: 新建成交 ID（long）
+```
+
+### 9.3 成交分页列表
+
+```
+GET /api/deals?page=1&size=10&channelTypeId=1&clientId=1&houseId=1
+    &dealBusinessUserId=2&contractSignDateFrom=2026-01-01&contractSignDateTo=2026-12-31&keyword=签约
+
+Query Parameters:
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| page | int | 否 | 页码，默认 1 |
+| size | int | 否 | 每页条数，默认 10 |
+| keyword | string | 否 | 成交备注模糊搜索 |
+| channelTypeId | long | 否 | 成交途径（渠道类型） |
+| clientId | long | 否 | 关联客户 ID |
+| houseId | long | 否 | 关联房源 ID |
+| dealBusinessUserId | long | 否 | 成交业务员 |
+| contractSignDateFrom | date | 否 | 签订日期起 |
+| contractSignDateTo | date | 否 | 签订日期止 |
+
+排序: 按 updateTime 倒序
+
+Response.data.records[] 主要字段:
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | long | 成交 ID |
+| houseIds / houses | array | 房源 ID 及摘要 |
+| clientIds / clients | array | 客户 ID 及摘要 |
+| channelTypeId / channelTypeName | - | 渠道类型 |
+| channelInstanceId / channelInstanceModel / channelInstanceName | - | 渠道实例 |
+| guidePriceId / guidePrice | - | 时点指导价 |
+| assessedPriceId / assessedPrice | - | 时点评估价 |
+| rentalArea | decimal | 租赁面积 |
+| contractTotalAmount | decimal | 合同总额 |
+| contractSignDate | date | 签订日期 |
+| contractStartDate | date | 起租日期 |
+| contractEndDate | date | 合同退租日期 |
+| actualEndDate | date | 实际退租日期，未退租为 null |
+| dealRemark | string | 备注 |
+| dealBusinessUserId / dealBusinessUser | - | 成交业务员 |
+| contactBusinessUserId / contactBusinessUser | - | 对接业务员 |
+| createTime / updateTime | datetime | 时间戳 |
+```
+
+### 9.4 成交详情
+
+```
+GET /api/deals/{id}
+
+Response.data 结构与列表单条一致，关联对象均已 enrich 填充。
+```
+
+### 9.5 修改成交
+
+```
+PUT /api/deals/{id}
+
+说明:
+- 已登记实际退租（actualEndDate 非空）的成交不可修改
+- 修改签订日期或房源时，将重新匹配指导价/评估价
+- 请求体字段均可选，传则更新
+```
+
+### 9.6 登记退租
+
+```
+POST /api/deals/{id}/checkout
+
+Request:
+{ "actualEndDate": "2027-06-30" }
+
+说明: 实际退租日期不能早于合同起租日期；不可重复登记。
+```
+
+### 9.7 删除成交
+
+```
+DELETE /api/deals/{id}
+```
+
+软删除；无额外引用校验。
 
 ---
 
@@ -1184,7 +2593,7 @@ Response:
 | 1005 | 密码错误 |
 | 1006 | 用户已被禁用 |
 | 1008 | 验证码错误或已过期 |
-| 2001 | 操作失败（如不能禁用自己、部门/角色约束等） |
+| 2001 | 操作失败（如不能禁用自己、部门/角色/渠道约束等） |
 | 2002 | 数据不存在 |
 | 2003 | 数据已存在 |
 
@@ -1200,5 +2609,5 @@ Token通过登录接口获取，有效期为7天。
 
 ---
 
-**文档版本**: v2.1  
+**文档版本**: v2.9  
 **最后更新**: 2026-05-15

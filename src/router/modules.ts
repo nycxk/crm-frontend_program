@@ -3,14 +3,17 @@ import type { RouteRecordRaw } from 'vue-router'
 const DashboardView = () => import('@/views/modules/DashboardView.vue')
 const CustomerListView = () => import('@/views/modules/CustomerListView.vue')
 const CustomerVisitView = () => import('@/views/modules/CustomerVisitView.vue')
+const CustomerDetailView = () => import('@/views/modules/CustomerDetailView.vue')
 const SeaView = () => import('@/views/modules/SeaView.vue')
 const PropertyView = () => import('@/views/modules/PropertyView.vue')
+const PriceBatchView = () => import('@/views/modules/PriceBatchView.vue')
 const ChannelView = () => import('@/views/modules/ChannelView.vue')
 const DealView = () => import('@/views/modules/DealView.vue')
 const ContactView = () => import('@/views/modules/ContactView.vue')
 const SystemPersonnelView = () => import('@/views/modules/SystemPersonnelView.vue')
 const SystemDepartmentView = () => import('@/views/modules/SystemDepartmentView.vue')
 const SystemPermissionView = () => import('@/views/modules/SystemPermissionView.vue')
+const SystemParamsView = () => import('@/views/modules/SystemParamsView.vue')
 
 export const moduleRoutes: RouteRecordRaw[] = [
   {
@@ -37,6 +40,12 @@ export const moduleRoutes: RouteRecordRaw[] = [
         component: CustomerVisitView,
         meta: { moduleCode: '10', moduleName: '客户来访' },
       },
+      {
+        path: 'detail',
+        name: 'customerDetail',
+        component: CustomerDetailView,
+        meta: { moduleCode: '11', moduleName: '客户详情' },
+      },
     ],
   },
   {
@@ -48,8 +57,22 @@ export const moduleRoutes: RouteRecordRaw[] = [
   {
     path: 'properties',
     name: 'properties',
-    component: PropertyView,
+    redirect: '/properties/list',
     meta: { moduleCode: '04', moduleName: '房产管理' },
+    children: [
+      {
+        path: 'list',
+        name: 'propertyList',
+        component: PropertyView,
+        meta: { moduleCode: '12', moduleName: '房产列表' },
+      },
+      {
+        path: 'price-batch',
+        name: 'priceBatch',
+        component: PriceBatchView,
+        meta: { moduleCode: '13', moduleName: '批量调价' },
+      },
+    ],
   },
   {
     path: 'channels',
@@ -79,19 +102,25 @@ export const moduleRoutes: RouteRecordRaw[] = [
         path: 'personnel',
         name: 'systemPersonnel',
         component: SystemPersonnelView,
-        meta: { moduleCode: '12', moduleName: '人员管理' },
+        meta: { moduleCode: '14', moduleName: '人员管理' },
       },
       {
         path: 'department',
         name: 'systemDepartment',
         component: SystemDepartmentView,
-        meta: { moduleCode: '13', moduleName: '部门管理' },
+        meta: { moduleCode: '15', moduleName: '部门管理' },
       },
       {
         path: 'permission',
         name: 'systemPermission',
         component: SystemPermissionView,
-        meta: { moduleCode: '14', moduleName: '权限管理' },
+        meta: { moduleCode: '16', moduleName: '权限管理' },
+      },
+      {
+        path: 'params',
+        name: 'systemParams',
+        component: SystemParamsView,
+        meta: { moduleCode: '17', moduleName: '系统参数' },
       },
     ],
   },
