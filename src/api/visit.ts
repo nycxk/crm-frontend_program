@@ -18,6 +18,7 @@ export interface VisitRecord {
   channelInstanceName: string
   detailDescription: string
   requirementsConfig: Record<string, string>
+  createdBy: number
   createTime: string
   updateTime: string
 }
@@ -26,6 +27,7 @@ export interface VisitQuery {
   page?: number
   size?: number
   clientId?: number
+  houseId?: number
   channelId?: number
   visitDateFrom?: string
   visitDateTo?: string

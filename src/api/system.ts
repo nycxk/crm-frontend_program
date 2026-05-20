@@ -169,6 +169,9 @@ export function updateDepartment(id: number, data: Partial<DepartmentSaveParams>
 export function deleteDepartment(id: number): Promise<null> {
   return del(`/api/system/departments/${id}`)
 }
+export function getParentOperationDepartment(projectId: number): Promise<DepartmentRecord> {
+  return get('/api/system/departments/parent-operation', { projectId })
+}
 
 // 权限管理
 export function getRoleList(query: RoleQuery): Promise<PageResult<RoleRecord>> {
@@ -221,4 +224,12 @@ export function getParamDetail(id: number): Promise<SystemParamRecord> {
 }
 export function updateParamValue(id: number, paramValue: string): Promise<null> {
   return put(`/api/system/params/${id}`, { paramValue })
+}
+
+export interface ParamByKeyResult {
+  paramKey: string
+  paramValue: string
+}
+export function getParamByKey(paramKey: string): Promise<ParamByKeyResult> {
+  return get(`/api/system/params/by-key/${encodeURIComponent(paramKey)}`)
 }

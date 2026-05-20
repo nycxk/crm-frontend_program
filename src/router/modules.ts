@@ -3,10 +3,10 @@ import type { RouteRecordRaw } from 'vue-router'
 const DashboardView = () => import('@/views/modules/DashboardView.vue')
 const CustomerListView = () => import('@/views/modules/CustomerListView.vue')
 const CustomerVisitView = () => import('@/views/modules/CustomerVisitView.vue')
-const CustomerDetailView = () => import('@/views/modules/CustomerDetailView.vue')
 const SeaView = () => import('@/views/modules/SeaView.vue')
 const PropertyView = () => import('@/views/modules/PropertyView.vue')
 const PriceBatchView = () => import('@/views/modules/PriceBatchView.vue')
+const InternalRentalView = () => import('@/views/modules/InternalRentalView.vue')
 const ChannelView = () => import('@/views/modules/ChannelView.vue')
 const DealView = () => import('@/views/modules/DealView.vue')
 const ContactView = () => import('@/views/modules/ContactView.vue')
@@ -40,12 +40,6 @@ export const moduleRoutes: RouteRecordRaw[] = [
         component: CustomerVisitView,
         meta: { moduleCode: '10', moduleName: '客户来访' },
       },
-      {
-        path: 'detail',
-        name: 'customerDetail',
-        component: CustomerDetailView,
-        meta: { moduleCode: '11', moduleName: '客户详情' },
-      },
     ],
   },
   {
@@ -64,13 +58,19 @@ export const moduleRoutes: RouteRecordRaw[] = [
         path: 'list',
         name: 'propertyList',
         component: PropertyView,
-        meta: { moduleCode: '12', moduleName: '房产列表' },
+        meta: { moduleCode: '11', moduleName: '房产列表' },
       },
       {
         path: 'price-batch',
         name: 'priceBatch',
         component: PriceBatchView,
-        meta: { moduleCode: '13', moduleName: '批量调价' },
+        meta: { moduleCode: '12', moduleName: '批量调价' },
+      },
+      {
+        path: 'internal-rental',
+        name: 'internalRental',
+        component: InternalRentalView,
+        meta: { moduleCode: '13', moduleName: '内部招租' },
       },
     ],
   },

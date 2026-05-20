@@ -15,6 +15,12 @@
             />
           </el-select>
         </el-form-item>
+        <el-form-item label="状态">
+          <el-select v-model="query.houseStatus" clearable placeholder="全部" style="width:120px" @change="handleSearch">
+            <el-option value="idle" label="闲置" />
+            <el-option value="rented" label="在租" />
+          </el-select>
+        </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="handleSearch">查询</el-button>
           <el-button @click="handleReset">重置</el-button>
@@ -35,7 +41,7 @@
         <el-table-column prop="houseName" label="房源名称" min-width="140" />
         <el-table-column label="面积(㎡)" min-width="200">
           <template #default="{ row }">
-            <span v-if="row.rentableArea">可租:{{ row.rentableArea }}</span>
+            <span v-if="row.rentableArea">适租:{{ row.rentableArea }}</span>
             <span v-if="row.totalArea"> 总:{{ row.totalArea }}</span>
             <span v-if="row.certificatedArea"> 证:{{ row.certificatedArea }}</span>
             <span v-if="!row.rentableArea && !row.totalArea">-</span>
@@ -55,6 +61,13 @@
           </template>
         </el-table-column>
         <el-table-column prop="departmentName" label="项目部" width="100" />
+        <el-table-column label="状态" width="80" align="center">
+          <template #default="{ row }">
+            <el-tag :type="row.houseStatus === 'idle' ? '' : 'success'" size="small">
+              {{ row.houseStatusName }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column label="图片" width="80" align="center">
           <template #default="{ row }">
             <el-tag v-if="row.images?.length" size="small" type="success">{{ row.images.length }}张</el-tag>
@@ -95,12 +108,12 @@
             <el-form-item label="房源名称" prop="houseName">
               <el-input v-model="form.houseName" placeholder="请输入房源名称" maxlength="64" />
             </el-form-item>
-            <el-form-item label="可租面积">
+            <el-form-item label="适租面积">
               <el-input v-model="form.rentableArea" placeholder="㎡">
                 <template #suffix>㎡</template>
               </el-input>
             </el-form-item>
-            <el-form-item label="非租面积">
+            <el-form-item label="不适租面积">
               <el-input v-model="form.nonRentableArea" placeholder="㎡">
                 <template #suffix>㎡</template>
               </el-input>
@@ -115,12 +128,12 @@
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="证载面积">
+            <el-form-item label="有证面积">
               <el-input v-model="form.certificatedArea" placeholder="㎡">
                 <template #suffix>㎡</template>
               </el-input>
             </el-form-item>
-            <el-form-item label="非证面积">
+            <el-form-item label="无证面积">
               <el-input v-model="form.uncertificatedArea" placeholder="㎡">
                 <template #suffix>㎡</template>
               </el-input>
@@ -149,9 +162,19 @@
           </el-col>
         </el-row>
         <el-form-item label="所属项目部" prop="departmentId">
-          <el-select v-model="form.departmentId" filterable placeholder="请选择项目部" style="width:100%">
+          <el-select v-model="form.departmentId" filterable placeholder="请选择项目部" style="width:100%" @change="onProjectChange">
             <el-option
-              v-for="d in deptList"
+              v-for="d in projectDeptList"
+              :key="d.id"
+              :value="d.id"
+              :label="d.departmentName"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="所属经营部" prop="operationDepartmentId">
+          <el-select v-model="form.operationDepartmentId" filterable placeholder="请选择经营部" style="width:100%">
+            <el-option
+              v-for="d in operationDeptList"
               :key="d.id"
               :value="d.id"
               :label="d.departmentName"
@@ -255,10 +278,16 @@
       <template v-if="detail">
         <el-descriptions :column="2" border>
           <el-descriptions-item label="房源名称">{{ detail.house.houseName }}</el-descriptions-item>
+          <el-descriptions-item label="状态">
+            <el-tag :type="detail.house.houseStatus === 'idle' ? '' : 'success'" size="small">
+              {{ detail.house.houseStatusName }}
+            </el-tag>
+          </el-descriptions-item>
           <el-descriptions-item label="项目部">{{ detail.house.departmentName }}</el-descriptions-item>
-          <el-descriptions-item label="可租面积">{{ detail.house.rentableArea || '-' }} ㎡</el-descriptions-item>
+          <el-descriptions-item label="所属经营部">{{ detail.house.operationDepartmentName || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="适租面积">{{ detail.house.rentableArea || '-' }} ㎡</el-descriptions-item>
           <el-descriptions-item label="总面积">{{ detail.house.totalArea || '-' }} ㎡</el-descriptions-item>
-          <el-descriptions-item label="证载面积">{{ detail.house.certificatedArea || '-' }} ㎡</el-descriptions-item>
+          <el-descriptions-item label="有证面积">{{ detail.house.certificatedArea || '-' }} ㎡</el-descriptions-item>
           <el-descriptions-item label="坐落">{{ detail.house.location || '-' }}</el-descriptions-item>
           <el-descriptions-item label="描述" :span="2">{{ detail.house.description || '-' }}</el-descriptions-item>
         </el-descriptions>
@@ -315,7 +344,10 @@ import {
   type PriceRecord,
 } from '@/api/house'
 import { uploadFile } from '@/api/file'
-import { getDepartmentList, type DepartmentRecord } from '@/api/system'
+import { getDepartmentList, getDepartmentTree, getParentOperationDepartment, type DepartmentRecord } from '@/api/system'
+import { useUserStore } from '@/stores/user'
+
+const userStore = useUserStore()
 
 const loading = ref(false)
 const dialogVisible = ref(false)
@@ -327,6 +359,9 @@ const formRef = ref<FormInstance>()
 const tableData = ref<HouseRecord[]>([])
 const total = ref(0)
 const deptList = ref<DepartmentRecord[]>([])
+const projectDeptList = ref<DepartmentRecord[]>([])
+const operationDeptList = ref<DepartmentRecord[]>([])
+const deptTree = ref<DepartmentRecord[]>([])
 
 const detailVisible = ref(false)
 const detail = ref<HouseDetail | null>(null)
@@ -337,6 +372,7 @@ const rollbackLoading = ref(false)
 const query = reactive({
   keyword: '',
   departmentId: undefined as number | undefined,
+  houseStatus: '' as string,
   page: 1,
   size: 10,
 })
@@ -351,6 +387,7 @@ const form = reactive({
   location: '',
   description: '',
   departmentId: undefined as number | undefined,
+  operationDepartmentId: undefined as number | undefined,
   images: [] as string[],
   guidePriceValue: '',
   guidePriceDate: '',
@@ -361,6 +398,7 @@ const form = reactive({
 const formRules: FormRules = {
   houseName: [{ required: true, message: '请输入房源名称', trigger: 'blur' }],
   departmentId: [{ required: true, message: '请选择项目部', trigger: 'change' }],
+  operationDepartmentId: [{ required: true, message: '请选择经营部', trigger: 'change' }],
 }
 
 function formatTime(s: string) { return s ? new Date(s).toLocaleString('zh-CN') : '-' }
@@ -371,6 +409,7 @@ async function fetchList() {
     const params: any = { page: query.page, size: query.size }
     if (query.keyword) params.keyword = query.keyword
     if (query.departmentId) params.departmentId = query.departmentId
+    if (query.houseStatus) params.houseStatus = query.houseStatus
     const res = await getHouseList(params)
     tableData.value = res.records
     total.value = res.total
@@ -379,9 +418,61 @@ async function fetchList() {
   }
 }
 
+function findDeptInTree(tree: DepartmentRecord[], id: number): DepartmentRecord | null {
+  for (const d of tree) {
+    if (d.id === id) return d
+    if (d.children) {
+      const found = findDeptInTree(d.children, id)
+      if (found) return found
+    }
+  }
+  return null
+}
+
+function getProjectDeptsUnder(tree: DepartmentRecord[], operationId: number): DepartmentRecord[] {
+  for (const d of tree) {
+    if (d.id === operationId) {
+      return d.children?.filter((c) => c.departmentType === 'project') || []
+    }
+    if (d.children) {
+      const found = getProjectDeptsUnder(d.children, operationId)
+      if (found.length) return found
+    }
+  }
+  return []
+}
+
 async function fetchDeptList() {
-  const res = await getDepartmentList({ page: 1, size: 200, departmentType: 'project' })
+  const [res, tree] = await Promise.all([
+    getDepartmentList({ page: 1, size: 200, departmentType: 'project' }),
+    getDepartmentTree(),
+  ])
   deptList.value = res.records
+  deptTree.value = tree
+
+  const userDeptId = userStore.departmentId
+  const userDept = userDeptId ? findDeptInTree(tree, userDeptId) : null
+
+  if (userDept) {
+    if (userDept.departmentType === 'project') {
+      projectDeptList.value = [userDept]
+      try {
+        const op = await getParentOperationDepartment(userDept.id)
+        operationDeptList.value = [op]
+      } catch {
+        operationDeptList.value = []
+      }
+    } else if (userDept.departmentType === 'operation') {
+      operationDeptList.value = [userDept]
+      projectDeptList.value = getProjectDeptsUnder(tree, userDept.id)
+    } else {
+      operationDeptList.value = tree.filter((d) => d.departmentType === 'operation')
+      projectDeptList.value = res.records
+    }
+  } else {
+    operationDeptList.value = tree.filter((d) => d.departmentType === 'operation')
+    projectDeptList.value = res.records
+  }
 }
 
 function handleSearch() {
@@ -392,6 +483,7 @@ function handleSearch() {
 function handleReset() {
   query.keyword = ''
   query.departmentId = undefined
+  query.houseStatus = ''
   query.page = 1
   fetchList()
 }
@@ -406,6 +498,7 @@ function resetForm() {
   form.location = ''
   form.description = ''
   form.departmentId = undefined
+  form.operationDepartmentId = undefined
   form.images = []
   form.guidePriceValue = ''
   form.guidePriceDate = ''
@@ -414,10 +507,41 @@ function resetForm() {
   formRef.value?.resetFields()
 }
 
-function openCreateDialog() {
+function onProjectChange(projectId: number | undefined) {
+  if (!projectId) {
+    form.operationDepartmentId = undefined
+    return
+  }
+  getParentOperationDepartment(projectId).then((op) => {
+    if (op && !operationDeptList.value.find((d) => d.id === op.id)) {
+      operationDeptList.value = [op]
+    }
+    form.operationDepartmentId = op.id
+  }).catch(() => {
+    form.operationDepartmentId = undefined
+  })
+}
+
+async function openCreateDialog() {
   isEdit.value = false
   editId.value = 0
   resetForm()
+
+  const userDeptId = userStore.departmentId
+  if (userDeptId && deptTree.value.length) {
+    const userDept = findDeptInTree(deptTree.value, userDeptId)
+    if (userDept?.departmentType === 'project') {
+      form.departmentId = userDept.id
+      try {
+        const op = await getParentOperationDepartment(userDept.id)
+        operationDeptList.value = [op]
+        form.operationDepartmentId = op.id
+      } catch {}
+    } else if (userDept?.departmentType === 'operation') {
+      form.operationDepartmentId = userDept.id
+    }
+  }
+
   dialogVisible.value = true
 }
 
@@ -438,6 +562,15 @@ async function openEditDialog(id: number) {
     form.location = h.location || ''
     form.description = h.description || ''
     form.departmentId = h.departmentId
+    form.operationDepartmentId = h.operationDepartmentId
+    if (h.departmentId && !operationDeptList.value.find((d) => d.id === h.operationDepartmentId)) {
+      try {
+        const op = await getParentOperationDepartment(h.departmentId)
+        if (!operationDeptList.value.find((d) => d.id === op.id)) {
+          operationDeptList.value = [op]
+        }
+      } catch {}
+    }
     form.images = h.images || []
     editPriceData.value = {
       guidePrices: d.guidePrices || [],
@@ -511,6 +644,7 @@ async function handleSubmit() {
     const payload: any = {
       houseName: form.houseName,
       departmentId: form.departmentId,
+      operationDepartmentId: form.operationDepartmentId,
       rentableArea: form.rentableArea ? Number(form.rentableArea) : undefined,
       nonRentableArea: form.nonRentableArea ? Number(form.nonRentableArea) : undefined,
       totalArea: form.totalArea ? Number(form.totalArea) : undefined,

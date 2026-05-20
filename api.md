@@ -1,6 +1,6 @@
 # CRM Backend API 文档
 
-> **说明**：包含认证授权、用户个人中心、文件管理、系统设置（人员/部门/权限）、渠道管理、客户、联系人、来访、房源及成交等接口。除标注「公开」外，均需在请求头携带 `Authorization: Bearer {token}`。
+> **说明**：包含认证授权、用户个人中心、文件管理、系统设置（人员/部门/权限）、渠道管理、客户、联系人、来访、房源、内部招租及成交等接口。除标注「公开」外，均需在请求头携带 `Authorization: Bearer {token}`。
 
 ---
 
@@ -16,6 +16,7 @@
 7. [客户来访 API](#7-客户来访-api)
 8. [房源管理 API](#8-房源管理-api)
 9. [成交管理 API](#9-成交管理-api)
+10. [内部招租 API](#10-内部招租-api)
 
 ---
 
@@ -517,7 +518,7 @@ Response: 文件二进制流（无需 Token）
 
 ## 4 系统设置 API
 
-系统设置包含：**人员管理**、**部门管理**、**权限管理（角色与模块）**。均需 Token。
+系统设置包含：**人员管理**、**部门管理**、**权限管理（角色与模块）**、**系统参数**。均需 Token。
 
 ### 4.0 接口总览
 
@@ -541,6 +542,7 @@ Response: 文件二进制流（无需 Token）
 |------|------|------|
 | GET | `/api/system/departments` | 分页列表（扁平） |
 | GET | `/api/system/departments/tree` | 经营部-项目部树 |
+| GET | `/api/system/departments/parent-operation?projectId=` | 根据项目部查上级经营部 |
 | GET | `/api/system/departments/{id}` | 详情（经营部含下级项目部列表） |
 | POST | `/api/system/departments` | 新增 |
 | PUT | `/api/system/departments/{id}` | 修改 |
@@ -556,6 +558,15 @@ Response: 文件二进制流（无需 Token）
 | POST | `/api/system/roles` | 新增角色 |
 | PUT | `/api/system/roles/{id}` | 修改角色 |
 | DELETE | `/api/system/roles/{id}` | 删除角色 |
+
+#### 系统参数 `/api/system/params`
+
+| 方法 | 端点 | 说明 |
+|------|------|------|
+| GET | `/api/system/params` | 分页列表 |
+| GET | `/api/system/params/by-key/{paramKey}` | 按 key 查询 value（无角色权限限制） |
+| GET | `/api/system/params/{id}` | 详情 |
+| PUT | `/api/system/params/{id}` | 修改参数值（仅 `paramValue`） |
 
 ---
 
@@ -772,6 +783,17 @@ Response:
 
 > 接口字段 `parentId` 对应数据库 `department_data.print_id`。人员可归属**经营部**或**项目部**。
 
+#### 数据权限（列表 / 树 / 详情）
+
+与业务角色无关，**仅** `SYSTEM_ADMIN` 可见全部部门；其他用户按**本人所属部门类型与上下级**判断：
+
+| 条件 | 可见范围 |
+|------|----------|
+| `SYSTEM_ADMIN` | 全部部门 |
+| 所属部门为**经营部**（`operation`） | 本经营部 + 其下全部项目部 |
+| 所属部门为**项目部**（`project`） | 仅所属项目部 |
+| 未分配部门 | 不可见任何部门 |
+
 #### 4.2.1 部门分页列表
 
 ```
@@ -815,6 +837,8 @@ Response:
 ```
 GET /api/system/departments/tree
 
+说明: 数据权限同 4.2.1；项目部人员若仅可见单个项目部，树可能为空（请用分页列表）
+
 Response:
 {
   "code": 200,
@@ -844,10 +868,42 @@ Response:
 }
 ```
 
-#### 4.2.3 部门详情
+#### 4.2.3 根据项目部查询上级经营部
+
+```
+GET /api/system/departments/parent-operation?projectId=2
+
+Query Parameters:
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| projectId | long | 是 | 项目部 ID |
+
+说明:
+- `projectId` 须为 `departmentType=project` 的部门
+- 返回该项目部 `printId` 对应的经营部（扁平一条，结构同列表单条，`children` 为空数组）
+- 须在部门数据权限内可见该项目部，否则 403
+- 若项目部未关联经营部或数据异常，返回业务错误
+
+Response.data 示例:
+{
+  "id": 1,
+  "departmentName": "总部经营部",
+  "departmentType": "operation",
+  "departmentTypeName": "经营部",
+  "parentId": 0,
+  "parentName": null,
+  "children": [],
+  "createTime": "2026-05-15T08:00:00",
+  "updateTime": "2026-05-15T08:00:00"
+}
+```
+
+#### 4.2.4 部门详情
 
 ```
 GET /api/system/departments/{id}
+
+说明: 须在数据权限范围内，否则 403
 
 说明:
 - 经营部详情：data.children 为下属项目部列表
@@ -882,7 +938,7 @@ Response（经营部示例）:
 }
 ```
 
-#### 4.2.4 新增部门
+#### 4.2.5 新增部门
 
 ```
 POST /api/system/departments
@@ -914,7 +970,7 @@ Response:
 }
 ```
 
-#### 4.2.5 修改部门
+#### 4.2.6 修改部门
 
 ```
 PUT /api/system/departments/{id}
@@ -939,7 +995,7 @@ Response:
 }
 ```
 
-#### 4.2.6 删除部门
+#### 4.2.7 删除部门
 
 ```
 DELETE /api/system/departments/{id}
@@ -1146,7 +1202,90 @@ Response:
 }
 ```
 
-### 4.4 系统设置常见错误
+### 4.4 系统参数
+
+数据表：`system`（字段 `code`、`key`、`value`、`type`、`unit`、`role_id`；接口 JSON 使用 `paramKey`、`paramValue`、`paramType`、`unit`、`roleId`）。
+
+说明：参数由初始化数据维护，**不提供新增接口**；前端仅可修改参数值。
+
+**数据权限**：
+
+| 角色 | 可见 / 可改范围 |
+|------|----------------|
+| `SYSTEM_ADMIN` | 全部系统参数 |
+| 其他角色 | 仅 `roleId` 与当前用户所持角色 ID 一致的记录 |
+
+定时任务等内部读取（如客户保护期 `CPP`）不受接口权限限制，仍按 `paramKey` 查询。
+
+#### 4.4.1 分页列表
+
+```
+GET /api/system/params?page=1&size=10&keyword=短信&code=SMS&paramKey=template&type=string
+
+Query:
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| page | int | 否 | 默认 1 |
+| size | int | 否 | 默认 10 |
+| keyword | string | 否 | 模糊匹配 code、key、value、type |
+| code | string | 否 | 精确匹配代码 |
+| paramKey | string | 否 | 精确匹配键 |
+| paramType | string | 否 | 精确匹配类型 |
+
+排序: updatedTime 倒序
+
+Response.data.records[]:
+{
+  "id": 1,
+  "code": "SMS",
+  "paramKey": "template_code",
+  "paramValue": "100001",
+  "paramType": "string",
+  "unit": "元/㎡",
+  "roleId": 4,
+  "roleName": "成员",
+  "createdBy": 2,
+  "createdByName": "admin",
+  "createTime": "2026-05-18T10:00:00",
+  "updatedTime": "2026-05-18T10:00:00"
+}
+```
+
+#### 4.4.2 按 key 查询 value
+
+```
+GET /api/system/params/by-key/CPP
+
+说明:
+- 根据 `paramKey`（表字段 `key`）返回参数值
+- **不做** `roleId` 角色权限过滤，任意已登录用户均可调用
+- 参数不存在时返回 2002
+
+Response.data:
+{
+  "paramKey": "CPP",
+  "paramValue": "30"
+}
+```
+
+#### 4.4.3 详情 / 修改
+
+```
+GET /api/system/params/{id}
+
+PUT /api/system/params/{id}
+{
+  "paramValue": "100002"
+}
+
+说明:
+- **仅可修改** `paramValue`（对应表字段 `value`）
+- `code`、`paramKey`、`paramType`、`unit`、`roleId` 等只读，由数据初始化维护
+- 无权限访问时返回 403；记录不存在返回 2002
+- 不提供删除接口
+```
+
+### 4.5 系统设置常见错误
 
 | code | 场景 |
 |------|------|
@@ -1154,7 +1293,7 @@ Response:
 | 1004 | 手机号/邮箱/用户名已存在 |
 | 1006 | 用户已禁用 |
 | 2001 | 不能禁用自己、部门有下级/人员、角色已分配用户、系统管理员禁止删除/改权限等 |
-| 2002 | 部门/角色/模块不存在 |
+| 2002 | 部门/角色/模块/系统参数不存在 |
 | 2003 | 部门名称、角色编码重复 |
 | 40002 | 参数格式错误（如部门类型非法、手机号格式错误） |
 
@@ -1468,6 +1607,8 @@ Response:
 | 方法 | 端点 | 说明 |
 |------|------|------|
 | GET | `/api/clients` | 客户分页列表（数据权限 + 联系人电话脱敏） |
+| GET | `/api/clients/public-pool` | 公海客户分页（联系人电话全量脱敏） |
+| POST | `/api/clients/public-pool/{id}/claim` | 认领公海客户 |
 | GET | `/api/clients/{id}` | 客户详情（含联系人、来访记录） |
 | POST | `/api/clients` | 新增客户（可关联联系人） |
 | PUT | `/api/clients/{id}` | 修改客户 |
@@ -1480,14 +1621,14 @@ Response:
 
 客户、联系人模块采用**相同**的数据权限与电话脱敏规则（均依据记录上的 `createdBy` 字段）。
 
-**数据权限**
+**数据权限**（与 [4.2 部门数据权限](#数据权限列表--树--详情) 一致：按用户所属部门类型与上下级，**非**按业务角色区分）
 
-| 角色 | 可见范围 |
-|------|----------|
-| `SALES`（成员） | 仅自己创建的记录（`createdBy` = 当前用户） |
-| `PROJECT_ADMIN`（项目管理员） | 本部门成员创建的记录 |
-| `OPERATE_ADMIN`（经营部管理员） | 本经营部及下属项目部成员创建的记录 |
+| 条件 | 可见客户/联系人范围 |
+|------|---------------------|
 | `SYSTEM_ADMIN` | 全部 |
+| 所属**经营部** | 本经营部及下属项目部内**所有成员**创建的记录 |
+| 所属**项目部** | 本项目部内**所有成员**创建的记录 |
+| 未分配部门 | 不可见 |
 
 **电话脱敏**（客户关联的 `contacts`、联系人列表/详情、`GET /api/clients/{id}/contacts`）：
 
@@ -1542,6 +1683,7 @@ POST /api/clients
 - contactIds 与 newContacts 至少传其一或都不传；都传时先创建 newContacts 再与 contactIds 一并关联
 - 创建人自动记录为当前登录用户
 - 新建客户状态默认为 `mine`（我的客户）
+- 同时写入 `claimTime`（认领时间）
 
 Response.data: 新建客户 ID（long）
 ```
@@ -1554,7 +1696,41 @@ Response.data: 新建客户 ID（long）
 | `tenant` | 租户 | 成交后自动变更 |
 | `public_pool` | 公海 | 超保护期等场景转入（列表接口不展示） |
 
-客户列表接口仅查询 `mine`、`tenant`；成交创建成功后，关联客户自动更新为 `tenant`。
+客户列表接口仅查询 `mine`、`tenant`；成交创建成功后，关联客户自动更新为 `tenant`；登记退租后，仅当该客户**无其他未退租成交**时，才将租户客户恢复为 `mine`。
+
+**认领时间 `claimTime`**：首次录入客户、公海认领时写入；用于客户保护期计算。
+
+**客户保护期**：系统参数 `system` 表中 `key=CPP` 的 `value`（天，默认 30）。每日凌晨 1 点定时任务将超保护期的「我的客户」转入公海（`client_status=public_pool`，`created_by` 置空）。
+
+### 6.2B 公海客户
+
+#### 公海分页列表
+
+```
+GET /api/clients/public-pool?page=1&size=10&keyword=张
+
+Query: page、size、keyword（同 6.3，无 status 参数）
+
+说明:
+- 仅返回 `client_status=public_pool` 的客户
+- 所有登录用户均可查看
+- 关联联系人 `contactPhone` **全量脱敏**（如 `***********`）
+
+Response: 结构同 6.3 客户分页
+```
+
+#### 认领公海客户
+
+```
+POST /api/clients/public-pool/{id}/claim
+
+说明:
+- 仅 `public_pool` 状态可认领
+- 认领后：`client_status=mine`，`created_by` 为当前用户，`claimTime` 更新为当前时间
+- 返回认领后的客户信息（联系人电话按本人权限展示，不脱敏）
+
+Response.data: ClientVO（同列表单条）
+```
 
 ### 6.3 客户分页列表
 
@@ -1618,7 +1794,8 @@ Response:
 | clientName | string | 客户姓名 |
 | idType | string | 证件类型，可为 null |
 | idNumber | string | 证件编号，可为 null |
-| createdBy | long | 创建人用户 ID |
+| createdBy | long | 创建人用户 ID；公海客户为 null |
+| claimTime | datetime | 认领时间 |
 | clientStatus | string | 状态：`mine` / `tenant` / `public_pool` |
 | clientStatusName | string | 状态中文名 |
 | visitCount | int | 该客户未删除来访记录数 |
@@ -1859,8 +2036,8 @@ Response:
 
 | 方法 | 端点 | 说明 |
 |------|------|------|
-| GET | `/api/visits` | 来访分页列表 |
-| GET | `/api/visits/{id}` | 来访详情 |
+| GET | `/api/visits` | 来访分页列表（数据权限） |
+| GET | `/api/visits/{id}` | 来访详情（数据权限） |
 | POST | `/api/visits` | 新增来访 |
 | PUT | `/api/visits/{id}` | 修改来访 |
 | DELETE | `/api/visits/{id}` | 软删除来访 |
@@ -1883,6 +2060,8 @@ Response:
 | channelInstanceName | string | 渠道实例展示名称（创建时解析或手填） |
 | detailDescription | string | 详情说明 |
 | requirementsConfig | object | 需求清单 JSON，键值自定义 |
+| createdBy | long | 添加人用户 ID |
+| createdByName | string | 添加人姓名（列表/详情 enrich 填充） |
 | createTime | datetime | 创建时间 |
 | updateTime | datetime | 更新时间 |
 
@@ -1892,11 +2071,26 @@ Response:
 |------|------|------|
 | id | long | 房源 ID |
 | houseName | string | 房源名称 |
+| houseStatus | string | 房源状态编码，见 [8.0](#80-房源状态) |
+| houseStatusName | string | 房源状态名称 |
 
-### 7.1 来访分页列表
+### 7.1 数据权限
+
+按来访记录的 **添加人**（`createdBy`）过滤，规则与 [6.1](#61-数据权限与电话脱敏) 一致：
+
+| 条件 | 可见来访范围 |
+|------|----------------|
+| `SYSTEM_ADMIN` | 全部 |
+| 所属**经营部** | 本经营部及下属项目部**成员添加**的来访 |
+| 所属**项目部** | 本项目部**成员添加**的来访 |
+| 未分配部门 | 不可见 |
+
+新建来访时自动写入当前登录用户为 `createdBy`；关联客户须在权限范围内；带看房源须在 [8.1 房源数据权限](#81-数据权限) 范围内。
+
+### 7.2 来访分页列表
 
 ```
-GET /api/visits?page=1&size=10&clientId=1&channelId=1&visitDateFrom=2026-01-01&visitDateTo=2026-12-31
+GET /api/visits?page=1&size=10&clientId=1&houseId=2&channelId=1&visitDateFrom=2026-01-01&visitDateTo=2026-12-31
 
 Query Parameters:
 | 参数 | 类型 | 必填 | 说明 |
@@ -1904,6 +2098,7 @@ Query Parameters:
 | page | int | 否 | 页码，默认 1 |
 | size | int | 否 | 每页条数，默认 10 |
 | clientId | long | 否 | 按客户 ID 筛选 |
+| houseId | long | 否 | 按带看房源 ID 筛选（`houseIds` 包含该房源） |
 | channelId | long | 否 | 按渠道类型 ID 筛选 |
 | visitDateFrom | date | 否 | 来访日期起（含），`yyyy-MM-dd` |
 | visitDateTo | date | 否 | 来访日期止（含），`yyyy-MM-dd` |
@@ -1947,7 +2142,7 @@ Response:
 
 字段说明见 [VisitVO](#visitvo)。`houses` 根据 `houseIds` 批量查询填充；ID 不存在或已删除的房源不会出现在 `houses` 中。
 
-### 7.2 来访详情
+### 7.3 来访详情
 
 ```
 GET /api/visits/{id}
@@ -1981,7 +2176,7 @@ Response:
 
 结构与列表单条 `records[]` 一致，字段说明见 [VisitVO](#visitvo)。
 
-### 7.3 新增来访
+### 7.4 新增来访
 
 ```
 POST /api/visits
@@ -1998,16 +2193,72 @@ Request:
 }
 
 渠道实例规则（channelId 对应渠道类型）:
-| 渠道类型 | instanceType / 名称 | channelInstanceId |
-|----------|---------------------|-------------------|
-| 中介公司 | agency | agency 表 ID |
-| 老带新 | - | 客户 client ID |
-| 全员营销 | - | 用户 users ID |
-| 泛销 | - | 联系人 contact ID |
-| 市场自来等 | none | 不需传，可填 channelInstanceName |
+| 渠道类型 | instanceType / 名称 | channelInstanceId | channelInstanceName |
+|----------|---------------------|-------------------|---------------------|
+| 中介公司 | agency | **必填**，agency 表 ID | 由后端解析，可不传 |
+| 老带新 | - | 可选，客户 client ID | 可选；未传 ID 时可为空 |
+| 全员营销 | - | 可选，用户 users ID | 可选；未传 ID 时可为空 |
+| 泛销 | - | 可选，联系人 contact ID | 可选；未传 ID 时可为空 |
+| 市场自来等 | none | 不需传 | 可选手填 |
 
 Response.data 为新建来访 ID
 ```
+
+---
+
+## 7A 客户来访草稿 API
+
+业务字段与正式来访一致，**均可为空**；不做渠道/客户/房源业务校验。仅当前登录用户可查看、修改、删除自己的草稿。
+
+| 方法 | 端点 | 说明 |
+|------|------|------|
+| GET | `/api/visit-drafts` | 草稿分页列表 |
+| GET | `/api/visit-drafts/{id}` | 草稿详情 |
+| POST | `/api/visit-drafts` | 新增草稿 |
+| PUT | `/api/visit-drafts/{id}` | 修改草稿（全量覆盖业务字段） |
+| DELETE | `/api/visit-drafts/{id}` | 软删除草稿 |
+
+### 7A.1 分页列表
+
+```
+GET /api/visit-drafts?page=1&size=10&clientId=1&keyword=首次
+
+Query:
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| page | int | 否 | 默认 1 |
+| size | int | 否 | 默认 10 |
+| clientId | long | 否 | 按客户筛选 |
+| keyword | string | 否 | 详情说明模糊搜索 |
+
+说明: 仅返回 `createdBy` 为当前用户的草稿；按 updateTime 倒序。
+```
+
+### 7A.2 详情 / 新增 / 修改 / 删除
+
+```
+GET /api/visit-drafts/{id}
+POST /api/visit-drafts
+PUT /api/visit-drafts/{id}
+DELETE /api/visit-drafts/{id}
+```
+
+**请求体**（POST/PUT，字段均可空，与 VisitVO 业务字段一致）:
+
+```json
+{
+  "visitDate": "2026-05-15",
+  "clientId": 1,
+  "houseIds": [1, 2],
+  "channelId": 1,
+  "channelInstanceId": null,
+  "channelInstanceName": null,
+  "detailDescription": "草稿说明",
+  "requirementsConfig": { "面积": "500" }
+}
+```
+
+响应 `VisitDraftVO` 结构类似 [VisitVO](#visitvo)，含 `createdBy`、`createTime`、`updateTime`；列表/详情会 enrich 客户名、渠道名、房源摘要。
 
 ---
 
@@ -2034,7 +2285,17 @@ Response.data 为新建来访 ID
 | GET | `/api/price-batches/{id}` | 批量调价记录详情 |
 | POST | `/api/price-batches/{id}/rollback` | 回退批量调价批次 |
 
-### 8.0 指导价 / 评估价（版本说明）
+### 8.0 房源状态
+
+| 编码 `houseStatus` | 名称 `houseStatusName` | 说明 |
+|--------------------|------------------------|------|
+| `idle` | 闲置 | 新建房源默认值 |
+| `rented` | 在租 | 新增成交成功后，关联房源自动变更为在租 |
+| （退租） | 闲置 | 登记实际退租后，关联房源自动恢复为闲置 |
+
+列表、详情响应均包含 `houseStatus`、`houseStatusName`。新增成交时仅允许选择**闲置**房源；签约成功后相关房源状态批量更新为在租；登记退租后恢复为闲置。
+
+### 8.0.1 指导价 / 评估价（版本说明）
 
 | 概念 | 说明 |
 |------|------|
@@ -2059,13 +2320,14 @@ Response.data 为新建来访 ID
 
 ### 8.1 数据权限
 
-按房源所属项目部（`departmentId`）过滤，规则与客户模块角色一致：
+按房源所属项目部（`departmentId`）过滤，规则与 [4.2 部门数据权限](#数据权限列表--树--详情) 一致：
 
-| 角色 | 可见范围 |
-|------|----------|
-| `SALES` / `PROJECT_ADMIN` | 本部门（项目部）下的房源 |
-| `OPERATE_ADMIN` | 本经营部下所有项目部的房源 |
-| `SYSTEM_ADMIN` | 全部房源 |
+| 条件 | 可见房源范围 |
+|------|--------------|
+| `SYSTEM_ADMIN` | 全部 |
+| 所属**经营部** | 下属全部**项目部**下的房源（房源仅挂项目部） |
+| 所属**项目部** | 本项目部下的房源 |
+| 未分配部门 | 不可见 |
 
 新建/修改时 `departmentId` 须为有效项目部，且在上述可见范围内。
 
@@ -2086,6 +2348,7 @@ Request:
   "description": "临街商铺",
   "images": ["/uploads/2026/05/house1.jpg"],
   "departmentId": 2,
+  "operationDepartmentId": 1,
   "guidePrice": {
     "priceValue": 12000,
     "effectiveDate": "2026-05-15",
@@ -2099,11 +2362,13 @@ Request:
 }
 
 说明:
-- houseName、departmentId、guidePrice、assessedPrice 必填
+- houseName、departmentId、operationDepartmentId、guidePrice、assessedPrice 必填
 - departmentId 须为项目部（department_type=project）
+- operationDepartmentId 须为经营部（department_type=operation），且须为该项目部的上级经营部
 - images 为图片 URL 数组，通常由文件上传接口获得
 - 指导价/评估价各新增一条记录，`version` 均为 **1**（两类价格版本互不影响）
 - `guidePrice` / `assessedPrice` 结构：`priceValue`、`effectiveDate` 必填；`expiryDate` 可选
+- 新建房源默认状态为 **闲置**（`houseStatus=idle`）
 
 Response.data: 新建房源 ID（long）
 ```
@@ -2111,7 +2376,7 @@ Response.data: 新建房源 ID（long）
 ### 8.3 房源分页列表
 
 ```
-GET /api/houses?page=1&size=10&keyword=A栋&departmentId=2
+GET /api/houses?page=1&size=10&keyword=A栋&departmentId=2&houseStatus=idle
 
 Query Parameters:
 | 参数 | 类型 | 必填 | 说明 |
@@ -2120,6 +2385,7 @@ Query Parameters:
 | size | int | 否 | 每页条数，默认 10 |
 | keyword | string | 否 | 模糊匹配房源名称、坐落、描述 |
 | departmentId | long | 否 | 按项目部筛选（须在权限范围内） |
+| houseStatus | string | 否 | 房源状态：`idle`（闲置）、`rented`（在租） |
 
 排序: 按 updateTime 倒序
 
@@ -2146,6 +2412,10 @@ Response:
         "images": ["/uploads/2026/05/house1.jpg"],
         "departmentId": 2,
         "departmentName": "城东项目部",
+        "operationDepartmentId": 1,
+        "operationDepartmentName": "总部经营部",
+        "houseStatus": "idle",
+        "houseStatusName": "闲置",
         "guidePrice": {
           "id": 3,
           "priceValue": 12500,
@@ -2229,6 +2499,8 @@ PUT /api/houses/{id}
 Request（基础字段均可选）:
 {
   "houseName": "A栋101-更新",
+  "departmentId": 2,
+  "operationDepartmentId": 1,
   "rentableArea": 520.00,
   "guidePrice": {
     "priceValue": 12500,
@@ -2241,6 +2513,7 @@ Request（基础字段均可选）:
 }
 
 说明:
+- `operationDepartmentId` 可选；传入时须为经营部且与当前/请求中的项目部匹配；仅改 `departmentId` 时会校验已有经营部是否仍匹配新项目部
 - **仅修改基础信息**：不传 `guidePrice`/`assessedPrice`，或传 `null`/空对象 `{}`，**不新增**价格版本
 - **追加价格版本**：对应对象中 `priceValue` 与 `effectiveDate` **均有值** 时，该类型 `version` 自动 +1 并插入新记录；缺一则不处理该类型
 - 修改基础信息不会覆盖历史价格
@@ -2423,8 +2696,8 @@ Response.data 批次对象:
 
 | 方法 | 端点 | 说明 |
 |------|------|------|
-| GET | `/api/deals` | 成交分页列表 |
-| GET | `/api/deals/{id}` | 成交详情 |
+| GET | `/api/deals` | 成交分页列表（数据权限） |
+| GET | `/api/deals/{id}` | 成交详情（数据权限） |
 | POST | `/api/deals` | 新增成交 |
 | PUT | `/api/deals/{id}` | 修改成交 |
 | POST | `/api/deals/{id}/checkout` | 登记实际退租 |
@@ -2432,16 +2705,16 @@ Response.data 批次对象:
 
 ### 9.1 数据权限
 
-按 **成交业务员**（`dealBusinessUserId`）过滤，规则与客户模块角色一致：
+按 **对接业务员**（`contactBusinessUserId`）过滤，规则与 [6.1](#61-数据权限与电话脱敏) 一致（按部门上下级，**非**按业务角色区分）：
 
-| 角色 | 可见范围 |
-|------|----------|
-| `SALES` | 仅本人作为成交业务员的记录 |
-| `PROJECT_ADMIN` | 本部门成员作为成交业务员的记录 |
-| `OPERATE_ADMIN` | 本经营部及下属项目部成员的记录 |
+| 条件 | 可见成交范围 |
+|------|----------------|
 | `SYSTEM_ADMIN` | 全部 |
+| 所属**经营部** | 本经营部及下属项目部成员作为对接业务员的记录 |
+| 所属**项目部** | 本项目部成员作为对接业务员的记录 |
+| 未分配部门 | 不可见 |
 
-新建成交时 `dealBusinessUserId` 自动设为当前登录用户；`contactBusinessUserId` 默认与成交业务员相同，可指定其他业务员。
+新建成交时 `dealBusinessUserId`、`contactBusinessUserId` 均自动设为当前登录用户（二者一致）；修改成交时可单独调整对接业务员。关联客户、房源须分别在客户、房源数据权限范围内。
 
 ### 9.2 新增成交
 
@@ -2460,13 +2733,13 @@ Request:
   "contractSignDate": "2026-05-15",
   "contractStartDate": "2026-06-01",
   "contractEndDate": "2027-05-31",
-  "dealRemark": "首年签约",
-  "contactBusinessUserId": 2
+  "dealRemark": "首年签约"
 }
 
 说明:
-- houseIds、clientIds：至少各选 1 个，须在数据权限内
-- channelTypeId：必填；渠道实例规则同来访（见 §7.3）
+- `dealBusinessUserId`、`contactBusinessUserId` 由系统自动设为当前登录用户，无需传入
+- houseIds、clientIds：至少各选 1 个，须在数据权限内；房源须为**闲置**（`houseStatus=idle`），成交创建成功后自动改为在租
+- channelTypeId：必填；渠道实例规则同来访（见 §7.4）
 - rentalArea：可选；不传则按所选房源适租面积之和自动计算
 - guidePriceId、assessedPriceId：系统按主房源（houseIds[0]）及签订日期自动匹配时点指导价/评估价
 - 日期约束：起租日期 ≥ 签订日期，退租日期 ≥ 起租日期
@@ -2545,7 +2818,9 @@ POST /api/deals/{id}/checkout
 Request:
 { "actualEndDate": "2027-06-30" }
 
-说明: 实际退租日期不能早于合同起租日期；不可重复登记。
+说明: 实际退租日期不能早于合同起租日期；不可重复登记。登记成功后：
+- 该成交关联的全部房源状态恢复为**闲置**（`idle`）
+- 关联客户中状态为**租户**（`tenant`）且**无其他未退租成交**的，恢复为**我的客户**（`mine`）；若仍在其他在租成交中，保持 `tenant`
 ```
 
 ### 9.7 删除成交
@@ -2555,6 +2830,157 @@ DELETE /api/deals/{id}
 ```
 
 软删除；无额外引用校验。
+
+---
+
+## 9A 成交草稿 API
+
+业务字段与正式成交一致（不含指导价/评估价、实际退租等系统字段），**均可为空**；不做业务校验。仅当前登录用户可操作自己的草稿。
+
+| 方法 | 端点 | 说明 |
+|------|------|------|
+| GET | `/api/deal-drafts` | 草稿分页列表 |
+| GET | `/api/deal-drafts/{id}` | 草稿详情 |
+| POST | `/api/deal-drafts` | 新增草稿 |
+| PUT | `/api/deal-drafts/{id}` | 修改草稿（全量覆盖业务字段） |
+| DELETE | `/api/deal-drafts/{id}` | 软删除草稿 |
+
+### 9A.1 分页列表
+
+```
+GET /api/deal-drafts?page=1&size=10&keyword=签约&clientId=1&houseId=2
+
+Query:
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| page | int | 否 | 默认 1 |
+| size | int | 否 | 默认 10 |
+| keyword | string | 否 | 成交备注模糊搜索 |
+| clientId | long | 否 | JSON 包含该客户 |
+| houseId | long | 否 | JSON 包含该房源 |
+
+说明: 仅返回当前用户的草稿；按 updateTime 倒序。
+```
+
+### 9A.2 详情 / 新增 / 修改 / 删除
+
+```
+GET /api/deal-drafts/{id}
+POST /api/deal-drafts
+PUT /api/deal-drafts/{id}
+DELETE /api/deal-drafts/{id}
+```
+
+**请求体**（POST/PUT，字段均可空）:
+
+```json
+{
+  "houseIds": [1],
+  "clientIds": [1],
+  "channelTypeId": 1,
+  "channelInstanceId": null,
+  "channelInstanceName": null,
+  "channelInstanceModel": null,
+  "rentalArea": 500.00,
+  "contractTotalAmount": 1200000.00,
+  "contractSignDate": "2026-05-15",
+  "contractStartDate": "2026-06-01",
+  "contractEndDate": "2027-05-31",
+  "dealRemark": "草稿备注",
+  "dealBusinessUserId": null,
+  "contactBusinessUserId": null
+}
+```
+
+说明:
+- 未传 `dealBusinessUserId` / `contactBusinessUserId` 时，默认使用当前登录用户（二者一致）
+- 响应 `DealDraftVO` 含客户/房源/渠道/业务员摘要 enrich 字段
+
+---
+
+## 10 内部招租 API
+
+关联表 `internal_rent`；**列表/详情/改删**按关联房源所属项目部做数据权限，规则与 [8.1 房源数据权限](#81-数据权限) 一致。新建、修改时**房源**须在权限范围内；**看房联系人**须在客户数据权限内可见（与联系人模块一致）。
+
+| 方法 | 端点 | 说明 |
+|------|------|------|
+| GET | `/api/internal-rents` | 分页列表 |
+| GET | `/api/internal-rents/{id}` | 详情 |
+| POST | `/api/internal-rents` | 新增 |
+| PUT | `/api/internal-rents/{id}` | 修改（部分字段） |
+| DELETE | `/api/internal-rents/{id}` | 软删除 |
+
+### 10.1 分页列表
+
+```
+GET /api/internal-rents?page=1&size=10&keyword=临街&houseId=1&initiateUserId=2&initiateDateFrom=2026-01-01&initiateDateTo=2026-12-31
+```
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| page | int | 否 | 默认 1 |
+| size | int | 否 | 默认 10 |
+| keyword | string | 否 | 模糊匹配用途要求、租赁时长要求、其他说明 |
+| houseId | long | 否 | 按房源筛选（须在权限内，否则无数据） |
+| initiateUserId | long | 否 | 按发起人用户 ID |
+| initiateDateFrom | date | 否 | 发起招租日期起（含） |
+| initiateDateTo | date | 否 | 发起招租日期止（含） |
+
+排序：`updateTime` 倒序。
+
+### 10.2 详情
+
+```
+GET /api/internal-rents/{id}
+```
+
+`data` 为 `InternalRentVO`：除表字段外，含 `house`（`HouseBriefVO`）、`initiateUser`（`UserBriefVO`）、`contacts`（按 `contactIds` 顺序填充的 `ContactVO` 列表；手机号脱敏规则同联系人模块）。
+
+### 10.3 新增
+
+```
+POST /api/internal-rents
+```
+
+请求体示例：
+
+```json
+{
+  "houseId": 1,
+  "initiateDate": "2026-05-01",
+  "stopDate": null,
+  "contactIds": [10, 11],
+  "rentalArea": 200.5,
+  "referencePrice": 12000,
+  "priceUnit": "月",
+  "usageRequirement": "零售优先",
+  "rentalDurationRequirement": "不少于一年",
+  "otherDescription": null
+}
+```
+
+- `houseId`、`initiateDate`、`rentalArea`、`referencePrice` 必填；`stopDate`、`contactIds` 及各文本字段可选。
+- `contactIds` 可空或省略；联系人须存在且当前用户有权查看。
+- `stopDate` 不得早于 `initiateDate`。
+- `initiateUserId` 由后端写入为当前登录用户。
+
+响应 `data`：新建记录 ID（long）。
+
+### 10.4 修改
+
+```
+PUT /api/internal-rents/{id}
+```
+
+请求体字段**均可选**；未传的字段不修改。`contactIds` 传**空数组**表示清空联系人。`clearStopDate` 为 `true` 时清空停止招租日期（与同时传 `stopDate` 时以清空为准）。`stopDate` 有值时更新停止日期。
+
+### 10.5 删除
+
+```
+DELETE /api/internal-rents/{id}
+```
+
+软删除（写入 `deleted_time`）。
 
 ---
 

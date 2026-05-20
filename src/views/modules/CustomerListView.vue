@@ -64,8 +64,8 @@
         <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="openDetailDialog(row.id)">详情</el-button>
-            <el-button link type="primary" size="small" @click="openEditDialog(row.id)">编辑</el-button>
-            <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <el-button link size="small" :disabled="row.createdBy !== userStore.userId" @click="openEditDialog(row.id)">编辑</el-button>
+            <el-button link type="danger" size="small" :disabled="row.createdBy !== userStore.userId" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -178,9 +178,15 @@
           <el-table-column prop="visitDate" label="来访日期" width="120" />
           <el-table-column label="房产" min-width="140">
             <template #default="{ row: v }">
-              <el-tag v-for="h in v.houses" :key="h.id" size="small" class="contact-tag">
-                {{ h.houseName }}
-              </el-tag>
+              <el-button
+                v-for="h in v.houses"
+                :key="h.id"
+                link
+                type="primary"
+                size="small"
+                class="contact-link"
+                @click="openHouseDetailPopup(h.id)"
+              >{{ h.houseName }}</el-button>
             </template>
           </el-table-column>
           <el-table-column label="渠道" min-width="180">
@@ -205,6 +211,84 @@
             </template>
           </el-table-column>
         </el-table>
+
+        <h4 class="section-title">成交房源</h4>
+        <el-table v-if="clientDeals.length" :data="clientDeals" size="small" stripe>
+          <el-table-column label="房源" min-width="140">
+            <template #default="{ row: d }">
+              <el-button
+                v-for="h in d.houses"
+                :key="h.id"
+                link
+                type="primary"
+                size="small"
+                class="contact-link"
+                @click="openHouseDetailPopup(h.id)"
+              >{{ h.houseName }}</el-button>
+            </template>
+          </el-table-column>
+          <el-table-column label="合同总额" width="120" align="right">
+            <template #default="{ row: d }">{{ d.contractTotalAmount?.toLocaleString() || '-' }}</template>
+          </el-table-column>
+          <el-table-column prop="contractSignDate" label="签订日期" width="110" />
+          <el-table-column label="状态" width="80" align="center">
+            <template #default="{ row: d }">
+              <el-tag :type="d.actualEndDate ? 'info' : 'success'" size="small">
+                {{ d.actualEndDate ? '已退' : '在租' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+        </el-table>
+        <el-empty v-else description="暂无成交记录" :image-size="60" />
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="houseDetailVisible"
+      title="房源详情"
+      width="700px"
+      :close-on-click-modal="false"
+    >
+      <template v-if="houseDetail">
+        <el-descriptions :column="2" border>
+          <el-descriptions-item label="房源名称">{{ houseDetail.house.houseName }}</el-descriptions-item>
+          <el-descriptions-item label="状态">
+            <el-tag :type="houseDetail.house.houseStatus === 'idle' ? '' : 'success'" size="small">
+              {{ houseDetail.house.houseStatusName }}
+            </el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="项目部">{{ houseDetail.house.departmentName }}</el-descriptions-item>
+          <el-descriptions-item label="适租面积">{{ houseDetail.house.rentableArea || '-' }} ㎡</el-descriptions-item>
+          <el-descriptions-item label="总面积">{{ houseDetail.house.totalArea || '-' }} ㎡</el-descriptions-item>
+          <el-descriptions-item label="有证面积">{{ houseDetail.house.certificatedArea || '-' }} ㎡</el-descriptions-item>
+          <el-descriptions-item label="坐落">{{ houseDetail.house.location || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="描述" :span="2">{{ houseDetail.house.description || '-' }}</el-descriptions-item>
+        </el-descriptions>
+
+        <h4 class="section-title">指导价历史</h4>
+        <el-table v-if="houseDetail.guidePrices?.length" :data="houseDetail.guidePrices" size="small" stripe>
+          <el-table-column prop="versionName" label="版本" width="100" />
+          <el-table-column prop="priceValue" label="价格(元/㎡)" width="120" />
+          <el-table-column prop="effectiveDate" label="生效日期" width="120" />
+          <el-table-column label="失效日期" width="120">
+            <template #default="{ row }">{{ row.expiryDate || '至今' }}</template>
+          </el-table-column>
+        </el-table>
+        <el-empty v-else description="暂无指导价数据" :image-size="60" />
+
+        <h4 class="section-title">评估价历史</h4>
+        <el-table v-if="houseDetail.assessedPrices?.length" :data="houseDetail.assessedPrices" size="small" stripe>
+          <el-table-column prop="versionName" label="版本" width="100" />
+          <el-table-column prop="priceValue" label="价格(元/㎡)" width="120" />
+          <el-table-column prop="effectiveDate" label="生效日期" width="120" />
+          <el-table-column label="失效日期" width="120">
+            <template #default="{ row }">{{ row.expiryDate || '至今' }}</template>
+          </el-table-column>
+        </el-table>
+        <el-empty v-else description="暂无评估价数据" :image-size="60" />
+      </template>
+      <template #footer>
+        <el-button @click="houseDetailVisible = false">关闭</el-button>
       </template>
     </el-dialog>
 
@@ -245,7 +329,12 @@ import {
   type ClientRecord,
   type ClientDetail,
 } from '@/api/client'
+import { getDealList, type DealRecord } from '@/api/deal'
 import { getContactList, type ContactRecord } from '@/api/contact'
+import { getHouseDetail, type HouseDetail } from '@/api/house'
+import { useUserStore } from '@/stores/user'
+
+const userStore = useUserStore()
 
 const loading = ref(false)
 const dialogVisible = ref(false)
@@ -259,6 +348,10 @@ const contactList = ref<ContactRecord[]>([])
 
 const detailVisible = ref(false)
 const detail = ref<ClientDetail | null>(null)
+const clientDeals = ref<DealRecord[]>([])
+
+const houseDetailVisible = ref(false)
+const houseDetail = ref<HouseDetail | null>(null)
 
 const bindDialogVisible = ref(false)
 const bindLoading = ref(false)
@@ -410,9 +503,15 @@ function handleDelete(row: ClientRecord) {
 
 async function openDetailDialog(id: number) {
   detail.value = null
+  clientDeals.value = []
   detailVisible.value = true
   try {
-    detail.value = await getClientDetail(id)
+    const [d, dealsRes] = await Promise.all([
+      getClientDetail(id),
+      getDealList({ clientId: id, size: 50 }),
+    ])
+    detail.value = d
+    clientDeals.value = dealsRes.records
   } catch {
     ElMessage.error('获取客户详情失败')
     detailVisible.value = false
@@ -453,6 +552,17 @@ function handleUnbindContact(contactId: number) {
     .catch(() => {})
 }
 
+async function openHouseDetailPopup(id: number) {
+  houseDetail.value = null
+  houseDetailVisible.value = true
+  try {
+    houseDetail.value = await getHouseDetail(id)
+  } catch {
+    ElMessage.error('获取房源详情失败')
+    houseDetailVisible.value = false
+  }
+}
+
 onMounted(() => {
   fetchList()
 })
@@ -478,6 +588,10 @@ onMounted(() => {
 .contact-tag {
   margin-right: 4px;
   margin-bottom: 2px;
+}
+
+.contact-link {
+  margin-right: 4px;
 }
 
 .section-title {

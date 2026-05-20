@@ -31,6 +31,10 @@ export interface HouseRecord {
   images: string[]
   departmentId: number
   departmentName: string
+  operationDepartmentId: number
+  operationDepartmentName: string
+  houseStatus: string
+  houseStatusName: string
   guidePrice: PriceRecord | null
   assessedPrice: PriceRecord | null
   createTime: string
@@ -48,6 +52,7 @@ export interface HouseQuery {
   size?: number
   keyword?: string
   departmentId?: number
+  houseStatus?: string
 }
 
 export interface HouseSaveParams {
@@ -61,6 +66,7 @@ export interface HouseSaveParams {
   description?: string
   images?: string[]
   departmentId: number
+  operationDepartmentId?: number
   guidePrice?: PriceInput
   assessedPrice?: PriceInput
 }

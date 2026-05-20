@@ -104,3 +104,10 @@ export function bindClientContacts(id: number, contactIds: number[]): Promise<nu
 export function unbindClientContact(id: number, contactId: number): Promise<null> {
   return del(`/api/clients/${id}/contacts/${contactId}`)
 }
+
+export function getPublicPoolList(query: { page?: number; size?: number; keyword?: string }): Promise<PageResult<ClientRecord>> {
+  return get('/api/clients/public-pool', query)
+}
+export function claimPublicClient(id: number): Promise<ClientRecord> {
+  return post(`/api/clients/public-pool/${id}/claim`)
+}

@@ -60,8 +60,8 @@
 
     <el-dialog
       v-model="dialogVisible"
-      title="修改参数值"
-      width="460px"
+      :title="isJsonType ? '修改参数值（JSON）' : '修改参数值'"
+      :width="isJsonType ? '500px' : '460px'"
       :close-on-click-modal="false"
     >
       <template v-if="editRow">
@@ -71,11 +71,26 @@
           <el-descriptions-item label="类型">{{ editRow.paramType || '-' }}</el-descriptions-item>
           <el-descriptions-item label="单位">{{ editRow.unit || '-' }}</el-descriptions-item>
         </el-descriptions>
-        <el-form ref="formRef" :model="form" :rules="formRules" label-width="60px">
+
+        <el-form v-if="!isJsonType" ref="formRef" :model="form" :rules="formRules" label-width="60px">
           <el-form-item label="值" prop="paramValue">
             <el-input v-model="form.paramValue" placeholder="请输入参数值" />
           </el-form-item>
         </el-form>
+
+        <div v-else class="json-editor">
+          <div v-for="(item, index) in jsonItems" :key="index" class="json-row">
+            <el-input v-model="item.key" placeholder="键" style="width:200px" />
+            <el-select v-model="item.type" style="width:110px">
+              <el-option value="text" label="文本" />
+              <el-option value="int" label="整数" />
+              <el-option value="float" label="浮点数" />
+              <el-option value="date" label="日期" />
+            </el-select>
+            <el-button link type="danger" size="small" @click="removeJsonItem(index)" :disabled="jsonItems.length <= 1">删除</el-button>
+          </div>
+          <el-button size="small" type="primary" @click="addJsonItem">+ 添加项</el-button>
+        </div>
       </template>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
@@ -86,7 +101,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import {
@@ -95,6 +110,11 @@ import {
   type SystemParamRecord,
 } from '@/api/system'
 
+interface JsonItem {
+  key: string
+  type: string
+}
+
 const loading = ref(false)
 const dialogVisible = ref(false)
 const submitLoading = ref(false)
@@ -102,6 +122,9 @@ const editRow = ref<SystemParamRecord | null>(null)
 const formRef = ref<FormInstance>()
 const tableData = ref<SystemParamRecord[]>([])
 const total = ref(0)
+const jsonItems = ref<JsonItem[]>([])
+
+const isJsonType = computed(() => editRow.value?.paramType === 'json')
 
 const query = reactive({
   keyword: '',
@@ -120,6 +143,26 @@ const formRules: FormRules = {
 }
 
 function formatTime(s: string) { return s ? new Date(s).toLocaleString('zh-CN') : '-' }
+
+function parseJsonValue(raw: string): JsonItem[] {
+  try {
+    const arr = JSON.parse(raw)
+    if (Array.isArray(arr)) {
+      return arr
+        .filter((item: any) => item && typeof item.key === 'string')
+        .map((item: any) => ({ key: item.key, type: item.type || 'text' }))
+    }
+  } catch {}
+  return [{ key: '', type: 'text' }]
+}
+
+function buildJsonValue(): string {
+  return JSON.stringify(
+    jsonItems.value
+      .filter((item) => item.key)
+      .map((item) => ({ key: item.key, type: item.type }))
+  )
+}
 
 async function fetchList() {
   loading.value = true
@@ -143,16 +186,42 @@ function handleReset() {
   fetchList()
 }
 
+function addJsonItem() {
+  jsonItems.value.push({ key: '', type: 'text' })
+}
+
+function removeJsonItem(index: number) {
+  jsonItems.value.splice(index, 1)
+}
+
 function openEditDialog(row: SystemParamRecord) {
   editRow.value = row
-  form.paramValue = row.paramValue
-  formRef.value?.resetFields()
+  if (row.paramType === 'json') {
+    jsonItems.value = parseJsonValue(row.paramValue)
+  } else {
+    form.paramValue = row.paramValue
+    formRef.value?.resetFields()
+  }
   dialogVisible.value = true
 }
 
 async function handleSubmit() {
+  if (!editRow.value) return
+
+  if (isJsonType.value) {
+    submitLoading.value = true
+    try {
+      const jsonStr = buildJsonValue()
+      await updateParamValue(editRow.value.id, jsonStr)
+      ElMessage.success('修改成功')
+      dialogVisible.value = false
+      fetchList()
+    } finally { submitLoading.value = false }
+    return
+  }
+
   const valid = await formRef.value?.validate().catch(() => false)
-  if (!valid || !editRow.value) return
+  if (!valid) return
   submitLoading.value = true
   try {
     await updateParamValue(editRow.value.id, form.paramValue)
@@ -170,4 +239,16 @@ onMounted(() => { fetchList() })
 .search-card :deep(.el-card__body) { padding-bottom: 0; }
 .card-header { display: flex; justify-content: space-between; align-items: center; }
 .pagination-wrap { display: flex; justify-content: flex-end; margin-top: 16px; }
+
+.json-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.json-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 </style>

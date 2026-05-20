@@ -12,6 +12,7 @@ export const useUserStore = defineStore('user', () => {
   const avatarUrl = ref<string>(localStorage.getItem('avatarUrl') || '')
   const roleCode = ref<string>(localStorage.getItem('roleCode') || '')
   const roleName = ref<string>(localStorage.getItem('roleName') || '')
+  const departmentId = ref<number>(Number(localStorage.getItem('departmentId')) || 0)
   const modules = ref<ModuleInfo[]>(
     JSON.parse(localStorage.getItem('modules') || '[]'),
   )
@@ -39,6 +40,7 @@ export const useUserStore = defineStore('user', () => {
       avatarUrl.value = profile.avatarUrl || ''
       roleCode.value = firstRole?.roleCode || ''
       roleName.value = firstRole?.roleName || ''
+      departmentId.value = profile.departmentId || 0
       modules.value = profile.modules || []
 
       localStorage.setItem('username', profile.username)
@@ -48,6 +50,7 @@ export const useUserStore = defineStore('user', () => {
       localStorage.setItem('avatarUrl', profile.avatarUrl || '')
       localStorage.setItem('roleCode', firstRole?.roleCode || '')
       localStorage.setItem('roleName', firstRole?.roleName || '')
+      localStorage.setItem('departmentId', String(profile.departmentId || 0))
       localStorage.setItem('modules', JSON.stringify(profile.modules || []))
 
       profileFetched.value = true
@@ -76,6 +79,7 @@ export const useUserStore = defineStore('user', () => {
     avatarUrl.value = ''
     roleCode.value = ''
     roleName.value = ''
+    departmentId.value = 0
     modules.value = []
     profileFetched.value = false
 
@@ -87,6 +91,7 @@ export const useUserStore = defineStore('user', () => {
     localStorage.removeItem('avatarUrl')
     localStorage.removeItem('roleCode')
     localStorage.removeItem('roleName')
+    localStorage.removeItem('departmentId')
     localStorage.removeItem('modules')
   }
 
@@ -108,6 +113,7 @@ export const useUserStore = defineStore('user', () => {
     avatarUrl,
     roleCode,
     roleName,
+    departmentId,
     modules,
     profileFetched,
     profileLoading,
