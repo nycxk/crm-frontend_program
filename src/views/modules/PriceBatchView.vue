@@ -57,7 +57,7 @@
     <el-card class="table-card">
       <template #header><span>调价批次记录</span></template>
 
-      <el-table :data="tableData" v-loading="loading" stripe>
+      <el-table :data="tableData" v-loading="loading" stripe highlight-current-row @row-click="openDetailDialog">
         <el-table-column prop="id" label="ID" width="70" />
         <el-table-column prop="batchCode" label="批次编号" min-width="180" />
         <el-table-column prop="batchName" label="批次名称" min-width="180" show-overflow-tooltip />
@@ -82,20 +82,6 @@
         <el-table-column label="上传日期" width="120">
           <template #default="{ row }">{{ row.uploadDate }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="140" fixed="right">
-          <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="openDetailDialog(row.id)">详情</el-button>
-            <el-button
-              link
-              type="danger"
-              size="small"
-              :disabled="row.status !== 'applied'"
-              @click="handleRollback(row)"
-            >
-              回退
-            </el-button>
-          </template>
-        </el-table-column>
       </el-table>
 
       <div class="pagination-wrap">
@@ -111,7 +97,20 @@
       </div>
     </el-card>
 
-    <el-dialog v-model="detailVisible" title="批次详情" width="700px" :close-on-click-modal="false">
+    <el-dialog v-model="detailVisible" width="700px" :close-on-click-modal="false">
+      <template #header>
+        <div class="detail-header">
+          <span>批次详情</span>
+          <div class="detail-header-actions">
+            <el-button
+              type="danger"
+              size="small"
+              :disabled="!detail || detail.status !== 'applied'"
+              @click="detail && handleRollback(detail)"
+            >回退</el-button>
+          </div>
+        </div>
+      </template>
       <template v-if="detail">
         <el-descriptions :column="2" border>
           <el-descriptions-item label="批次编号">{{ detail.batchCode }}</el-descriptions-item>
@@ -224,11 +223,11 @@ async function handleUpload(options: UploadRequestOptions) {
   }
 }
 
-async function openDetailDialog(id: number) {
+async function openDetailDialog(row: PriceBatchRecord) {
   detail.value = null
   detailVisible.value = true
   try {
-    detail.value = await getPriceBatchDetail(id)
+    detail.value = await getPriceBatchDetail(row.id)
   } catch {
     ElMessage.error('获取批次详情失败')
     detailVisible.value = false
@@ -285,4 +284,6 @@ onMounted(() => { fetchList() })
 .section-title {
   margin: 20px 0 12px;
 }
+.detail-header { display: flex; justify-content: space-between; align-items: center; width: 100%; }
+.detail-header-actions { display: flex; gap: 8px; }
 </style>

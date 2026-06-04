@@ -25,7 +25,7 @@
         </div>
       </template>
 
-      <el-table :data="tableData" v-loading="loading" stripe>
+      <el-table :data="tableData" v-loading="loading" stripe highlight-current-row @row-click="openEditDialog">
         <el-table-column prop="id" label="ID" width="70" />
         <el-table-column prop="code" label="代码" width="120" />
         <el-table-column prop="paramKey" label="键" min-width="160" />
@@ -37,11 +37,6 @@
         <el-table-column prop="createdByName" label="创建人" width="100" />
         <el-table-column label="更新时间" width="180">
           <template #default="{ row }">{{ formatTime(row.updatedTime) }}</template>
-        </el-table-column>
-        <el-table-column label="操作" width="80" fixed="right">
-          <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="openEditDialog(row)">修改</el-button>
-          </template>
         </el-table-column>
       </el-table>
 

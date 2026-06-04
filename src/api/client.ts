@@ -5,6 +5,8 @@ export interface ClientContact {
   contactName: string
   contactPhone: string
   model: string | null
+  agencyId: number | null
+  agencyName: string | null
   remark: string | null
   createTime: string
   updateTime: string
@@ -110,4 +112,7 @@ export function getPublicPoolList(query: { page?: number; size?: number; keyword
 }
 export function claimPublicClient(id: number): Promise<ClientRecord> {
   return post(`/api/clients/public-pool/${id}/claim`)
+}
+export function releaseToPublicPool(id: number): Promise<null> {
+  return post(`/api/clients/${id}/public-pool`)
 }

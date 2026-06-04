@@ -14,6 +14,7 @@ const SystemPersonnelView = () => import('@/views/modules/SystemPersonnelView.vu
 const SystemDepartmentView = () => import('@/views/modules/SystemDepartmentView.vue')
 const SystemPermissionView = () => import('@/views/modules/SystemPermissionView.vue')
 const SystemParamsView = () => import('@/views/modules/SystemParamsView.vue')
+const SystemOperationLogView = () => import('@/views/modules/SystemOperationLogView.vue')
 
 export const moduleRoutes: RouteRecordRaw[] = [
   {
@@ -121,6 +122,12 @@ export const moduleRoutes: RouteRecordRaw[] = [
         name: 'systemParams',
         component: SystemParamsView,
         meta: { moduleCode: '17', moduleName: '系统参数' },
+      },
+      {
+        path: 'operation-log',
+        name: 'systemOperationLog',
+        component: SystemOperationLogView,
+        meta: { moduleCode: '18', moduleName: '系统日志' },
       },
     ],
   },

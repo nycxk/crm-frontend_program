@@ -36,7 +36,7 @@
         </div>
       </template>
 
-      <el-table :data="tableData" v-loading="loading" stripe>
+      <el-table :data="tableData" v-loading="loading" stripe highlight-current-row @row-click="openDetailFromRow">
         <el-table-column prop="id" label="ID" width="70" />
         <el-table-column prop="houseName" label="房源名称" min-width="140" />
         <el-table-column label="面积(㎡)" min-width="200">
@@ -74,13 +74,6 @@
             <span v-else>-</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="200" fixed="right">
-          <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="openDetailDialog(row.id)">详情</el-button>
-            <el-button link type="primary" size="small" @click="openEditDialog(row.id)">编辑</el-button>
-            <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
-          </template>
-        </el-table-column>
       </el-table>
 
       <div class="pagination-wrap">
@@ -108,33 +101,33 @@
             <el-form-item label="房源名称" prop="houseName">
               <el-input v-model="form.houseName" placeholder="请输入房源名称" maxlength="64" />
             </el-form-item>
-            <el-form-item label="适租面积">
-              <el-input v-model="form.rentableArea" placeholder="㎡">
+            <el-form-item label="适租面积" prop="rentableArea">
+              <el-input v-model="form.rentableArea" type="number" placeholder="㎡">
                 <template #suffix>㎡</template>
               </el-input>
             </el-form-item>
-            <el-form-item label="不适租面积">
-              <el-input v-model="form.nonRentableArea" placeholder="㎡">
+            <el-form-item label="不适租面积" prop="nonRentableArea">
+              <el-input v-model="form.nonRentableArea" type="number" placeholder="㎡">
                 <template #suffix>㎡</template>
               </el-input>
             </el-form-item>
-            <el-form-item label="总面积">
-              <el-input v-model="form.totalArea" placeholder="㎡">
+            <el-form-item label="总面积" prop="totalArea">
+              <el-input v-model="form.totalArea" type="number" placeholder="㎡">
                 <template #suffix>㎡</template>
               </el-input>
             </el-form-item>
             <el-form-item label="指导价(元/㎡)" prop="guidePriceValue">
-              <el-input v-model="form.guidePriceValue" :placeholder="isEdit ? '选填' : '必填'" />
+              <el-input v-model="form.guidePriceValue" type="number" :placeholder="isEdit ? '选填' : '必填'" />
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="有证面积">
-              <el-input v-model="form.certificatedArea" placeholder="㎡">
+            <el-form-item label="有证面积" prop="certificatedArea">
+              <el-input v-model="form.certificatedArea" type="number" placeholder="㎡">
                 <template #suffix>㎡</template>
               </el-input>
             </el-form-item>
-            <el-form-item label="无证面积">
-              <el-input v-model="form.uncertificatedArea" placeholder="㎡">
+            <el-form-item label="无证面积" prop="uncertificatedArea">
+              <el-input v-model="form.uncertificatedArea" type="number" placeholder="㎡">
                 <template #suffix>㎡</template>
               </el-input>
             </el-form-item>
@@ -145,7 +138,7 @@
               <el-input v-model="form.description" type="textarea" :rows="2" placeholder="房源描述" maxlength="256" />
             </el-form-item>
             <el-form-item label="评估价(元/㎡)" prop="assessedPriceValue">
-              <el-input v-model="form.assessedPriceValue" :placeholder="isEdit ? '选填' : '必填'" />
+              <el-input v-model="form.assessedPriceValue" type="number" :placeholder="isEdit ? '选填' : '必填'" />
             </el-form-item>
           </el-col>
         </el-row>
@@ -219,7 +212,7 @@
             <template #default="{ row }">{{ row.expiryDate || '至今' }}</template>
           </el-table-column>
           <el-table-column label="操作" width="80">
-            <template #default="{ row, $index }">
+            <template #default="{ $index }">
               <el-button
                 v-if="$index === 0"
                 link
@@ -245,7 +238,7 @@
             <template #default="{ row }">{{ row.expiryDate || '至今' }}</template>
           </el-table-column>
           <el-table-column label="操作" width="80">
-            <template #default="{ row, $index }">
+            <template #default="{ $index }">
               <el-button
                 v-if="$index === 0"
                 link
@@ -271,10 +264,17 @@
 
     <el-dialog
       v-model="detailVisible"
-      title="房源详情"
       width="800px"
       :close-on-click-modal="false"
     >
+      <template #header>
+        <div class="detail-header">
+          <span>房源详情</span>
+          <div class="detail-header-actions">
+            <el-button type="primary" size="small" @click="detail && openEditDialog(detail.house.id)">编辑</el-button>
+          </div>
+        </div>
+      </template>
       <template v-if="detail">
         <el-descriptions :column="2" border>
           <el-descriptions-item label="房源名称">{{ detail.house.houseName }}</el-descriptions-item>
@@ -291,6 +291,20 @@
           <el-descriptions-item label="坐落">{{ detail.house.location || '-' }}</el-descriptions-item>
           <el-descriptions-item label="描述" :span="2">{{ detail.house.description || '-' }}</el-descriptions-item>
         </el-descriptions>
+
+        <h4 class="section-title">房源图片</h4>
+        <div v-if="detail.house.images?.length" class="images-grid">
+          <el-image
+            v-for="(url, idx) in detail.house.images"
+            :key="idx"
+            :src="resolveImageUrl(url)"
+            :preview-src-list="detail.house.images.map(u => resolveImageUrl(u))"
+            :initial-index="idx"
+            fit="cover"
+            style="width:140px; height:140px; border-radius:4px;"
+          />
+        </div>
+        <el-empty v-else description="暂无图片" :image-size="60" />
 
         <h4 class="section-title">指导价历史</h4>
         <el-table v-if="detail.guidePrices?.length" :data="detail.guidePrices" size="small" stripe>
@@ -335,7 +349,6 @@ import {
   getHouseDetail,
   createHouse,
   updateHouse,
-  deleteHouse,
   rollbackGuidePrice,
   rollbackAssessedPrice,
   resolveImageUrl,
@@ -395,10 +408,24 @@ const form = reactive({
   assessedPriceDate: '',
 })
 
+function validateNumber(_rule: any, value: string, cb: any) {
+  if (!value) return cb()
+  const n = Number(value)
+  if (isNaN(n) || n < 0) return cb(new Error('请输入有效数字'))
+  cb()
+}
+
 const formRules: FormRules = {
   houseName: [{ required: true, message: '请输入房源名称', trigger: 'blur' }],
   departmentId: [{ required: true, message: '请选择项目部', trigger: 'change' }],
   operationDepartmentId: [{ required: true, message: '请选择经营部', trigger: 'change' }],
+  rentableArea: [{ validator: validateNumber, trigger: 'blur' }],
+  nonRentableArea: [{ validator: validateNumber, trigger: 'blur' }],
+  totalArea: [{ validator: validateNumber, trigger: 'blur' }],
+  certificatedArea: [{ validator: validateNumber, trigger: 'blur' }],
+  uncertificatedArea: [{ validator: validateNumber, trigger: 'blur' }],
+  guidePriceValue: [{ validator: validateNumber, trigger: 'blur' }],
+  assessedPriceValue: [{ validator: validateNumber, trigger: 'blur' }],
 }
 
 function formatTime(s: string) { return s ? new Date(s).toLocaleString('zh-CN') : '-' }
@@ -593,6 +620,10 @@ async function openDetailDialog(id: number) {
   }
 }
 
+function openDetailFromRow(row: HouseRecord) {
+  openDetailDialog(row.id)
+}
+
 function beforeUpload(file: File) {
   const isImage = file.type.startsWith('image/')
   if (!isImage) {
@@ -717,20 +748,6 @@ async function handleRollback(type: 'guide' | 'assessed') {
     .catch(() => {})
 }
 
-function handleDelete(row: HouseRecord) {
-  ElMessageBox.confirm(
-    `确认删除房源「${row.houseName}」吗？`,
-    '删除确认',
-    { confirmButtonText: '确定删除', cancelButtonText: '取消', type: 'warning' },
-  )
-    .then(async () => {
-      await deleteHouse(row.id)
-      ElMessage.success('已删除')
-      fetchList()
-    })
-    .catch(() => {})
-}
-
 onMounted(() => {
   fetchList()
   fetchDeptList()
@@ -752,6 +769,18 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+.detail-header-actions {
+  display: flex;
+  gap: 8px;
 }
 
 .pagination-wrap {
@@ -802,5 +831,11 @@ onMounted(() => {
 
 .section-title {
   margin: 20px 0 12px;
+}
+
+.images-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 </style>

@@ -64,22 +64,27 @@
         </el-main>
       </el-container>
     </el-container>
+
+    <ChangePasswordDialog v-model="showChangePwdDialog" @success="handleChangePwdSuccess" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref, computed, onMounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import {
   OfficeBuilding, User, Fold, Expand, DataAnalysis,
   UserFilled, Coin, House, Connection, Money,
   Phone, Setting, Loading,
 } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
+import ChangePasswordDialog from '@/views/ChangePasswordDialog.vue'
 
 const route = useRoute()
+const router = useRouter()
 const userStore = useUserStore()
 const isCollapse = ref(false)
+const showChangePwdDialog = ref(false)
 
 const topModules = computed(() => userStore.getTopModules())
 
@@ -88,6 +93,16 @@ const activeMenu = computed(() => route.path)
 onMounted(() => {
   userStore.fetchUserProfile()
 })
+
+watch(
+  () => userStore.profileFetched,
+  (fetched) => {
+    if (fetched && userStore.defaultPassword === 1) {
+      showChangePwdDialog.value = true
+    }
+  },
+  { immediate: true },
+)
 
 const codePathMap: Record<string, string> = {
   '01': '/dashboard',
@@ -107,6 +122,7 @@ const codePathMap: Record<string, string> = {
   '15': '/system/department',
   '16': '/system/permission',
   '17': '/system/params',
+  '18': '/system/operation-log',
 }
 
 function getPath(code: string): string {
@@ -139,6 +155,12 @@ function getIcon(name: string) {
 
 function handleLogout() {
   userStore.handleLogout()
+}
+
+function handleChangePwdSuccess() {
+  showChangePwdDialog.value = false
+  userStore.clearLogin()
+  router.push('/login')
 }
 </script>
 

@@ -38,12 +38,6 @@
                 {{ row.hasAgency ? row.agencyCount : '-' }}
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="100">
-              <template #default="{ row }">
-                <el-button link type="primary" size="small" @click.stop="openChannelDialog(row.id)">编辑</el-button>
-                <el-button link type="danger" size="small" @click.stop="handleChannelDelete(row)">删除</el-button>
-              </template>
-            </el-table-column>
           </el-table>
         </el-card>
       </el-col>
@@ -58,14 +52,17 @@
                   {{ selectedChannel.instanceType === 'agency' ? '可挂中介公司' : '无二级数据' }}
                 </el-tag>
               </span>
-              <el-button
-                v-if="selectedChannel.instanceType === 'agency'"
-                type="primary"
-                size="small"
-                @click="openAgencyDialog()"
-              >
-                新增中介公司
-              </el-button>
+              <div class="header-actions">
+                <el-button type="primary" size="small" @click="openChannelDialog(selectedChannel.id)">编辑渠道</el-button>
+                <el-button
+                  v-if="selectedChannel.instanceType === 'agency'"
+                  type="primary"
+                  size="small"
+                  @click="openAgencyDialog()"
+                >
+                  新增中介公司
+                </el-button>
+              </div>
             </div>
           </template>
 
@@ -79,17 +76,11 @@
                 <el-button size="small" @click="resetAgencyQuery">重置</el-button>
               </el-form-item>
             </el-form>
-            <el-table :data="agencyList" v-loading="agencyLoading" stripe>
+            <el-table :data="agencyList" v-loading="agencyLoading" stripe highlight-current-row @row-click="handleAgencyClick">
               <el-table-column prop="id" label="ID" width="70" />
               <el-table-column prop="companyName" label="公司名称" min-width="200" />
               <el-table-column label="创建时间" width="180">
                 <template #default="{ row }">{{ formatTime(row.createTime) }}</template>
-              </el-table-column>
-              <el-table-column label="操作" width="120">
-                <template #default="{ row }">
-                  <el-button link type="primary" size="small" @click="openAgencyDialog(row.id)">编辑</el-button>
-                  <el-button link type="danger" size="small" @click="handleAgencyDelete(row)">删除</el-button>
-                </template>
               </el-table-column>
             </el-table>
             <div class="pagination-wrap">
@@ -156,18 +147,16 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import {
   getChannelList,
   getChannelDetail,
   createChannel,
   updateChannel,
-  deleteChannel,
   getAgencyList,
   createAgency,
   updateAgency,
-  deleteAgency,
   type ChannelRecord,
   type AgencyRecord,
 } from '@/api/channel'
@@ -325,21 +314,8 @@ async function handleChannelSubmit() {
   }
 }
 
-function handleChannelDelete(row: ChannelRecord) {
-  ElMessageBox.confirm(
-    `确认删除渠道类型「${row.typeName}」吗？${row.instanceType === 'agency' ? '需确保下属无中介公司且未被业务引用。' : '需确保未被业务引用。'}`,
-    '删除确认',
-    { confirmButtonText: '确定删除', cancelButtonText: '取消', type: 'warning' },
-  )
-    .then(async () => {
-      await deleteChannel(row.id)
-      ElMessage.success('已删除')
-      if (selectedChannel.value?.id === row.id) {
-        selectedChannel.value = null
-      }
-      fetchChannelList()
-    })
-    .catch(() => {})
+function handleAgencyClick(row: AgencyRecord) {
+  openAgencyDialog(row.id)
 }
 
 async function openAgencyDialog(agencyId?: number) {
@@ -378,22 +354,6 @@ async function handleAgencySubmit() {
   } finally {
     agencySubmitLoading.value = false
   }
-}
-
-function handleAgencyDelete(row: AgencyRecord) {
-  ElMessageBox.confirm(
-    `确认删除中介公司「${row.companyName}」吗？需确保未被来访记录引用。`,
-    '删除确认',
-    { confirmButtonText: '确定删除', cancelButtonText: '取消', type: 'warning' },
-  )
-    .then(async () => {
-      if (!selectedChannel.value) return
-      await deleteAgency(selectedChannel.value.id, row.id)
-      ElMessage.success('已删除')
-      selectedChannel.value.agencyCount--
-      fetchAgencyList()
-    })
-    .catch(() => {})
 }
 
 onMounted(() => {

@@ -30,11 +30,11 @@
         </div>
       </template>
 
-      <el-table :data="tableData" v-loading="loading" stripe>
+      <el-table :data="tableData" v-loading="loading" stripe highlight-current-row @row-click="openDetailFromRow">
         <el-table-column prop="id" label="ID" width="70" />
         <el-table-column label="房源" min-width="150">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" class="item-link" @click="openHouseDetail(row.houseId)">
+            <el-button link type="primary" size="small" class="item-link" @click.stop="openHouseDetail(row.houseId)">
               {{ row.house?.houseName || '-' }}
             </el-button>
           </template>
@@ -53,13 +53,6 @@
         <el-table-column prop="rentalDurationRequirement" label="租期要求" min-width="120" show-overflow-tooltip />
         <el-table-column label="发起人" width="100">
           <template #default="{ row }">{{ row.initiateUser?.username || '-' }}</template>
-        </el-table-column>
-        <el-table-column label="操作" width="180" fixed="right">
-          <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="openDetailDialog(row.id)">详情</el-button>
-            <el-button link type="primary" size="small" @click="openEditDialog(row.id)">编辑</el-button>
-            <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
-          </template>
         </el-table-column>
       </el-table>
 
@@ -160,10 +153,17 @@
 
     <el-dialog
       v-model="detailVisible"
-      title="招租详情"
       width="800px"
       :close-on-click-modal="false"
     >
+      <template #header>
+        <div class="detail-header">
+          <span>招租详情</span>
+          <div class="detail-header-actions">
+            <el-button type="primary" size="small" @click="detail && openEditDialog(detail.id)">编辑</el-button>
+          </div>
+        </div>
+      </template>
       <template v-if="detail">
         <el-descriptions :column="2" border>
           <el-descriptions-item label="房源">{{ detail.house?.houseName || '-' }}</el-descriptions-item>
@@ -180,6 +180,20 @@
           <el-descriptions-item label="创建时间">{{ formatTime(detail.createTime) }}</el-descriptions-item>
           <el-descriptions-item label="更新时间">{{ formatTime(detail.updateTime) }}</el-descriptions-item>
         </el-descriptions>
+
+        <h4 class="section-title">房源图片</h4>
+        <div v-if="rentalHouseImages.length" class="images-grid">
+          <el-image
+            v-for="(url, idx) in rentalHouseImages"
+            :key="idx"
+            :src="resolveImageUrl(url)"
+            :preview-src-list="rentalHouseImages.map(u => resolveImageUrl(u))"
+            :initial-index="idx"
+            fit="cover"
+            style="width:140px; height:140px; border-radius:4px;"
+          />
+        </div>
+        <el-empty v-else description="暂无图片" :image-size="60" />
 
         <h4 class="section-title">看房联系人</h4>
         <el-table v-if="detail.contacts?.length" :data="detail.contacts" size="small" stripe>
@@ -214,6 +228,20 @@
           <el-descriptions-item label="描述" :span="2">{{ houseDetail.house.description || '-' }}</el-descriptions-item>
         </el-descriptions>
 
+        <h4 class="section-title">房源图片</h4>
+        <div v-if="houseDetail.house.images?.length" class="images-grid">
+          <el-image
+            v-for="(url, idx) in houseDetail.house.images"
+            :key="idx"
+            :src="resolveImageUrl(url)"
+            :preview-src-list="houseDetail.house.images.map(u => resolveImageUrl(u))"
+            :initial-index="idx"
+            fit="cover"
+            style="width:140px; height:140px; border-radius:4px;"
+          />
+        </div>
+        <el-empty v-else description="暂无图片" :image-size="60" />
+
         <h4 class="section-title">指导价历史</h4>
         <el-table v-if="houseDetail.guidePrices?.length" :data="houseDetail.guidePrices" size="small" stripe>
           <el-table-column prop="versionName" label="版本" width="100" />
@@ -242,13 +270,13 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted, computed } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import {
-  getInternalRentList, getInternalRentDetail, createInternalRent, updateInternalRent, deleteInternalRent,
+  getInternalRentList, getInternalRentDetail, createInternalRent, updateInternalRent,
   type InternalRentRecord,
 } from '@/api/internal-rent'
-import { getHouseList, getHouseDetail, type HouseDetail } from '@/api/house'
+import { getHouseList, getHouseDetail, resolveImageUrl, type HouseDetail } from '@/api/house'
 import { getContactList, type ContactRecord } from '@/api/contact'
 
 const loading = ref(false)
@@ -264,6 +292,7 @@ const contactList = ref<ContactRecord[]>([])
 
 const detailVisible = ref(false)
 const detail = ref<InternalRentRecord | null>(null)
+const rentalHouseImages = ref<string[]>([])
 
 const houseDetailVisible = ref(false)
 const houseDetail = ref<HouseDetail | null>(null)
@@ -440,19 +469,22 @@ async function handleSubmit() {
   } finally { submitLoading.value = false }
 }
 
-function handleDelete(row: InternalRentRecord) {
-  ElMessageBox.confirm(
-    '确认删除该招租记录吗？',
-    '删除确认',
-    { confirmButtonText: '确定删除', cancelButtonText: '取消', type: 'warning' },
-  )
-    .then(async () => { await deleteInternalRent(row.id); ElMessage.success('已删除'); fetchList() })
-    .catch(() => {})
+function openDetailFromRow(row: InternalRentRecord) {
+  openDetailDialog(row.id)
 }
 
 async function openDetailDialog(id: number) {
-  detail.value = null; detailVisible.value = true
-  try { detail.value = await getInternalRentDetail(id) }
+  detail.value = null
+  rentalHouseImages.value = []
+  detailVisible.value = true
+  try {
+    const d = await getInternalRentDetail(id)
+    detail.value = d
+    if (d.houseId) {
+      const houseDetail = await getHouseDetail(d.houseId)
+      rentalHouseImages.value = houseDetail.house.images || []
+    }
+  }
   catch { ElMessage.error('获取详情失败'); detailVisible.value = false }
 }
 
@@ -470,10 +502,33 @@ onMounted(() => { fetchList(); fetchOptions() })
 .ir-page { display: flex; flex-direction: column; gap: 16px; }
 .search-card :deep(.el-card__body) { padding-bottom: 0; }
 .card-header { display: flex; justify-content: space-between; align-items: center; }
+.card-header-actions { display: flex; gap: 8px; }
+.detail-header { display: flex; justify-content: space-between; align-items: center; width: 100%; }
+.detail-header-actions { display: flex; gap: 8px; }
 .item-link { margin-right: 4px; }
 .section-title { margin: 20px 0 12px; }
 .price-unit-row :deep(.el-form-item__content) { flex-wrap: wrap; }
 .price-calc { color: #909399; font-size: 12px; margin-left: 8px; line-height: 32px; }
-.price-calc-detail { color: #909399; font-size: 12px; margin-top: 2px; }
+
+.images-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.pricing-wrap {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.pricing-right {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.price-calc-detail {
+  color: #909399;
+  font-size: 12px;
+  margin-top: 2px;
+}
 .pagination-wrap { display: flex; justify-content: flex-end; margin-top: 16px; }
 </style>

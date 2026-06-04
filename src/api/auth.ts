@@ -1,4 +1,4 @@
-import { post, get } from '@/utils/request'
+import { post, get, put } from '@/utils/request'
 
 export interface LoginParams {
   phone: string
@@ -58,10 +58,17 @@ export interface UserProfile {
   phone: string
   departmentId: number | null
   status: number
+  defaultPassword: number
+  defaultPasswordName: string
   createdAt: string
   lastLoginAt: string
   roles: RoleInfo[]
   modules: ModuleInfo[]
+}
+
+export interface ChangePasswordParams {
+  oldPassword: string
+  newPassword: string
 }
 
 export function login(data: LoginParams): Promise<LoginData> {
@@ -85,4 +92,8 @@ export function sendCode(phone: string, captchaType: string): Promise<string> {
 
 export function getUserProfile(): Promise<UserProfile> {
   return get<UserProfile>('/api/user/profile')
+}
+
+export function changePassword(data: ChangePasswordParams): Promise<string> {
+  return put<string>('/api/user/password', data)
 }

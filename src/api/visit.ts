@@ -10,6 +10,16 @@ export interface VisitRecord {
   visitDate: string
   clientId: number
   clientName: string
+  contactId: number | null
+  contact: {
+    id: number
+    contactName: string
+    contactPhone: string
+    model: string | null
+    agencyId: number | null
+    agencyName: string | null
+    remark: string | null
+  } | null
   houseIds: number[]
   houses: HouseBrief[]
   channelId: number | null
@@ -36,6 +46,7 @@ export interface VisitQuery {
 export interface VisitSaveParams {
   visitDate: string
   clientId: number
+  contactId?: number
   houseIds?: number[]
   channelId?: number
   channelInstanceId?: number

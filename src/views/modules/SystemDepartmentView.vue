@@ -67,7 +67,7 @@
             </el-form-item>
           </el-form>
 
-          <el-table :data="tableData" v-loading="loading" stripe>
+          <el-table :data="tableData" v-loading="loading" stripe highlight-current-row @row-click="openEditDialog">
             <el-table-column prop="id" label="ID" width="70" />
             <el-table-column prop="departmentName" label="部门名称" min-width="160" />
             <el-table-column label="类型" width="100" align="center">
@@ -82,12 +82,6 @@
             </el-table-column>
             <el-table-column label="创建时间" width="180">
               <template #default="{ row }">{{ formatTime(row.createTime) }}</template>
-            </el-table-column>
-            <el-table-column label="操作" width="160" fixed="right">
-              <template #default="{ row }">
-                <el-button link type="primary" size="small" @click="openEditDialog(row.id)">编辑</el-button>
-                <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
-              </template>
             </el-table-column>
           </el-table>
 
@@ -143,7 +137,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import {
   getDepartmentList,
@@ -151,7 +145,6 @@ import {
   getDepartmentDetail,
   createDepartment,
   updateDepartment,
-  deleteDepartment,
   type DepartmentRecord,
 } from '@/api/system'
 
@@ -259,12 +252,12 @@ function openCreateDialog(type: 'operation' | 'project') {
   dialogVisible.value = true
 }
 
-async function openEditDialog(id: number) {
+async function openEditDialog(row: DepartmentRecord) {
   isEdit.value = true
-  editId.value = id
+  editId.value = row.id
   resetForm()
   try {
-    const detail = await getDepartmentDetail(id)
+    const detail = await getDepartmentDetail(row.id)
     formType.value = detail.departmentType as 'operation' | 'project'
     dialogTitle.value = `编辑${detail.departmentTypeName}`
     form.departmentName = detail.departmentName
@@ -302,21 +295,6 @@ async function handleSubmit() {
   } finally {
     submitLoading.value = false
   }
-}
-
-function handleDelete(row: DepartmentRecord) {
-  ElMessageBox.confirm(
-    `确认删除部门「${row.departmentName}」吗？${row.departmentType === 'operation' ? '删除前需确保下属无项目部且部门下无人员。' : '删除前需确保部门下无人员。'}`,
-    '删除确认',
-    { confirmButtonText: '确定删除', cancelButtonText: '取消', type: 'warning' },
-  )
-    .then(async () => {
-      await deleteDepartment(row.id)
-      ElMessage.success('已删除')
-      fetchList()
-      fetchTree()
-    })
-    .catch(() => {})
 }
 
 onMounted(() => {

@@ -1,5 +1,5 @@
 import { get, post, put, del } from '@/utils/request'
-import type { DealHouse, DealClient, DealUser, DealPrice, PageResult } from './deal'
+import type { DealHouse, DealClient, DealUser, PageResult } from './deal'
 
 export interface DealDraftRecord {
   id: number

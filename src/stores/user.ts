@@ -16,6 +16,7 @@ export const useUserStore = defineStore('user', () => {
   const modules = ref<ModuleInfo[]>(
     JSON.parse(localStorage.getItem('modules') || '[]'),
   )
+  const defaultPassword = ref<number>(Number(localStorage.getItem('defaultPassword')) || 0)
 
   const isLoggedIn = () => !!token.value
 
@@ -42,6 +43,7 @@ export const useUserStore = defineStore('user', () => {
       roleName.value = firstRole?.roleName || ''
       departmentId.value = profile.departmentId || 0
       modules.value = profile.modules || []
+      defaultPassword.value = profile.defaultPassword || 0
 
       localStorage.setItem('username', profile.username)
       localStorage.setItem('userId', String(profile.id))
@@ -52,6 +54,7 @@ export const useUserStore = defineStore('user', () => {
       localStorage.setItem('roleName', firstRole?.roleName || '')
       localStorage.setItem('departmentId', String(profile.departmentId || 0))
       localStorage.setItem('modules', JSON.stringify(profile.modules || []))
+      localStorage.setItem('defaultPassword', String(profile.defaultPassword || 0))
 
       profileFetched.value = true
     } finally {
@@ -81,6 +84,7 @@ export const useUserStore = defineStore('user', () => {
     roleName.value = ''
     departmentId.value = 0
     modules.value = []
+    defaultPassword.value = 0
     profileFetched.value = false
 
     localStorage.removeItem('token')
@@ -93,6 +97,7 @@ export const useUserStore = defineStore('user', () => {
     localStorage.removeItem('roleName')
     localStorage.removeItem('departmentId')
     localStorage.removeItem('modules')
+    localStorage.removeItem('defaultPassword')
   }
 
   async function handleLogout() {
@@ -115,6 +120,7 @@ export const useUserStore = defineStore('user', () => {
     roleName,
     departmentId,
     modules,
+    defaultPassword,
     profileFetched,
     profileLoading,
     isLoggedIn,

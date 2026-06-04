@@ -29,6 +29,13 @@
 | POST | `/api/auth/register` | 用户注册 | 公开 |
 | POST | `/api/auth/code` | 发送验证码 | 公开 |
 
+### 1.0 会话与多端登录
+
+- 配置项 `auth.concurrent-sessions`（默认 `true`）：**允许多端同时在线**。JWT 载荷含 `jti`（令牌 ID）。同一账号在手机、浏览器等可同时使用各自 Token，**新设备登录不会踢掉旧设备**。
+- `POST /api/auth/logout`：仅吊销**当前请求**携带的 Token（写入 Redis 黑名单至该 Token 自然过期），**不影响**其他端。
+- **全端下线**：修改登录密码、管理员重置密码、禁用人员账号等场景，后端会记录「签发时间吊销点」，该用户在**此前**签发的所有 Token 均失效，须重新登录。
+- 若将 `auth.concurrent-sessions` 设为 `false`，恢复为旧版 **Redis 单槽** 行为：同用户仅**最后一次登录**的 Token 有效（新登录会使旧 Token 立即不可用）。
+
 ### 1.1 用户登录
 
 ```
@@ -75,6 +82,8 @@ POST /api/auth/logout
 
 Headers:
 Authorization: Bearer {token}
+
+说明: 需在 Header 携带 `Authorization: Bearer {token}`。默认（`auth.concurrent-sessions=true`）下仅结束**本端**会话，其他设备仍保持登录；`auth.concurrent-sessions=false` 时行为与旧版一致（删除该用户在 Redis 中的唯一 Token 记录）。
 
 Response:
 {
@@ -169,6 +178,8 @@ GET /api/user/profile
 Headers:
 Authorization: Bearer {token}
 
+说明: `defaultPassword`：`1`-仍为初始/默认密码（人员新增、管理员重置后），`2`-否；`defaultPasswordName` 为展示文案。前端可在值为 `1` 时提示强制改密。
+
 Response:
 {
 	"code": 200,
@@ -181,6 +192,8 @@ Response:
 		"phone": "13800138000",
 		"departmentId": null,
 		"status": 1,
+		"defaultPassword": 2,
+		"defaultPasswordName": "否",
 		"createdAt": "2026-05-15T06:22:25.000Z",
 		"lastLoginAt": "2026-05-15T08:00:22.000Z",
 		"roles": [
@@ -360,6 +373,26 @@ Response:
 
 **用户状态 `status`**：`1` 激活、`2` 未激活、`3` 封禁。
 
+**当前系统模块
+```
+(1, 0, '数据概览', '01', 1, 1, 1),
+(2, 0, '客户管理', '02', 2, 1, 2),
+(3, 0, '公海客户', '03', 3, 1, 1),
+(4, 0, '房产管理', '04', 4, 1, 2),
+(5, 0, '渠道管理', '05', 5, 1, 1),
+(6, 0, '成交管理', '06', 6, 1, 1),
+(7, 0, '联系人', '07', 7, 1, 1),
+(8, 0, '系统管理', '08', 8, 1, 2),
+(9, 2, '客户列表', '09', 9, 1, 1),
+(10, 2, '客户来访', '10', 10, 1, 1),
+(11, 4, '房产列表', '11', 11, 1, 1),
+(12, 4, '批量调价', '12', 12, 1, 1),
+(13, 4, '内部招租', '13', 13, 1, 1),
+(14, 8, '人员管理', '14', 14, 1, 1),
+(15, 8, '部门管理', '15', 15, 1, 1),
+(16, 8, '权限管理', '16', 16, 1, 1),
+(17, 8, '系统参数', '17', 17, 1, 1);
+```
 ### 2.2 修改个人资料
 
 ```
@@ -395,7 +428,7 @@ Response:
 }
 ```
 
-> 修改成功后会清除 Redis 中的 Token，需重新登录。
+> 修改成功后会吊销该用户**全部**有效会话（多端均需重新登录），并清除用户缓存；同时将 `defaultPassword` 置为 `2`（否）。
 
 ### 2.4 重置密码（无需登录）
 
@@ -518,7 +551,7 @@ Response: 文件二进制流（无需 Token）
 
 ## 4 系统设置 API
 
-系统设置包含：**人员管理**、**部门管理**、**权限管理（角色与模块）**、**系统参数**。均需 Token。
+系统设置包含：**人员管理**、**部门管理**、**权限管理（角色与模块）**、**系统参数**、**操作日志**。均需 Token。
 
 ### 4.0 接口总览
 
@@ -567,6 +600,16 @@ Response: 文件二进制流（无需 Token）
 | GET | `/api/system/params/by-key/{paramKey}` | 按 key 查询 value（无角色权限限制） |
 | GET | `/api/system/params/{id}` | 详情 |
 | PUT | `/api/system/params/{id}` | 修改参数值（仅 `paramValue`） |
+
+#### 操作日志 `/api/system/operation-logs`
+
+| 方法 | 端点 | 说明 |
+|------|------|------|
+| GET | `/api/system/operation-logs` | 操作日志分页列表 |
+| GET | `/api/system/operation-logs/{id}` | 日志详情 |
+
+> **自动记录**：各业务模块 `POST`/`PUT`/`PATCH`/`DELETE` 接口（除 `/api/auth/**`、上传、公开重置密码等）成功后写入 `user_operation` 日志；`module` 筛选可选值见 [4.5.1.1](#4511-module-可选值业务模块)。
+> **定时任务**：`@Scheduled` 任务通过 `ScheduledJobLogHelper` 写入 `logType=job`、`module=job` 日志（含耗时、影响条数、成功/失败）。
 
 ---
 
@@ -668,7 +711,7 @@ Request:
 字段说明:
 - username: 必填，用户名
 - phone: 必填，11 位手机号
-- 初始密码: 固定为 `admin123`（无需传 password，用户首次登录后可自行修改）
+- 初始密码: 固定为 `admin123`（无需传 password）；创建后 `defaultPassword=1`（是），用户修改密码后变为 `2`（否）
 - email: 可选
 - departmentId: 可选，所属部门 ID（可为经营部或项目部）
 - status: 可选，默认 1（激活）
@@ -743,7 +786,7 @@ POST /api/system/staff/{id}/password/reset
 
 说明:
 - 无需请求体，将密码重置为固定值 `admin123`
-- 重置后会清除该用户 Redis 中的 Token，需重新登录
+- 重置后会吊销该用户**全部**会话，需重新登录；`defaultPassword` 置为 `1`（是）
 
 Response:
 {
@@ -1285,7 +1328,139 @@ PUT /api/system/params/{id}
 - 不提供删除接口
 ```
 
-### 4.5 系统设置常见错误
+### 4.5 操作日志
+
+#### 4.5.1 分页列表
+
+```
+GET /api/system/operation-logs?page=1&size=10&logType=user_operation&module=clients&action=create&operatorUserId=2&status=success&keyword=新增&createDateFrom=2026-05-01&createDateTo=2026-05-20
+```
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| page | int | 否 | 默认 1 |
+| size | int | 否 | 默认 10 |
+| logType | string | 否 | `user_operation`（用户操作）/ `job`（定时任务） |
+| module | string | 否 | 业务模块标识，**精确匹配**；可选值见 [4.5.1.1 module 可选值](#4511-module-可选值业务模块) |
+| action | string | 否 | `create` / `update` / `delete` / `execute` |
+| operatorUserId | long | 否 | 操作人 ID（定时任务无操作人） |
+| status | string | 否 | `success` / `fail` |
+| keyword | string | 否 | 模糊匹配摘要、操作人、任务名、请求路径 |
+| jobName | string | 否 | 定时任务名称（模糊匹配） |
+| createDateFrom | date | 否 | 记录日期起 |
+| createDateTo | date | 否 | 记录日期止 |
+
+排序：`createTime` 倒序。`size` 最大 100。
+
+Response:
+```json
+{
+  "code": 200,
+  "message": "操作成功",
+  "data": {
+    "records": [
+      {
+        "id": 1,
+        "logType": "user_operation",
+        "logTypeName": "用户操作",
+        "module": "houses",
+        "action": "create",
+        "actionName": "新增",
+        "operatorUserId": 2,
+        "operatorName": "admin",
+        "targetId": "5",
+        "summary": "admin 新增 houses",
+        "requestMethod": "POST",
+        "requestUri": "/api/houses",
+        "clientIp": "192.168.1.10",
+        "status": "success",
+        "statusName": "成功",
+        "createTime": "2026-06-02T16:30:00"
+      }
+    ],
+    "total": 1,
+    "size": 10,
+    "current": 1,
+    "pages": 1
+  }
+}
+```
+
+`records[]` 元素 `OperationLogVO` 主要字段：
+
+| 字段 | 说明 |
+|------|------|
+| logType / logTypeName | 日志类型 |
+| module | 业务模块 |
+| action / actionName | 动作 |
+| operatorUserId / operatorName | 操作人（任务为空） |
+| targetId | 目标 ID（如路径参数 id） |
+| summary | 可读摘要 |
+| requestMethod / requestUri / clientIp | HTTP 信息（用户操作） |
+| jobName / durationMs / affectCount | 任务信息 |
+| status / statusName / errorMessage | 执行结果 |
+| detail | JSON 扩展（方法签名等） |
+| createTime | 记录时间 |
+
+#### 4.5.1.1 module 可选值（业务模块）
+
+`module` 由系统自动写入，**非固定下拉枚举**；分页筛选须传入与库中一致的完整字符串（精确匹配）。
+
+**用户操作**（`logType=user_operation`）：取 Controller 类上 `@RequestMapping` 路径，去掉 `/api/` 前缀，将 `/` 替换为 `.`。例如 `/api/system/staff` → `system.staff`。
+
+| module 值 | 对应业务 | API 前缀 | 典型记录的操作 |
+|-----------|----------|----------|----------------|
+| `clients` | 客户 | `/api/clients` | 新增/修改/删除客户、投放公海、认领、绑定联系人等 |
+| `contacts` | 联系人 | `/api/contacts` | 新增/修改/删除联系人 |
+| `visits` | 来访 | `/api/visits` | 新增/修改/删除来访 |
+| `visit-drafts` | 来访草稿 | `/api/visit-drafts` | 新增/修改/删除来访草稿 |
+| `channels` | 渠道（含中介公司） | `/api/channels` | 渠道类型与中介公司的增删改 |
+| `houses` | 房源 | `/api/houses` | 新增/修改/删除房源、价格回退等 |
+| `price-batches` | 批量调价 | `/api/price-batches` | 上传调价批次、回退等 |
+| `internal-rents` | 内部招租 | `/api/internal-rents` | 新增/修改/删除内部招租 |
+| `deals` | 成交 | `/api/deals` | 新增/修改/退租/删除成交 |
+| `deal-drafts` | 成交草稿 | `/api/deal-drafts` | 新增/修改/删除成交草稿 |
+| `system.staff` | 人员管理 | `/api/system/staff` | 新增/修改/删除人员、改手机号、重置密码等 |
+| `system.departments` | 部门管理 | `/api/system/departments` | 新增/修改/删除部门 |
+| `system.roles` | 角色权限 | `/api/system/roles` | 新增/修改/删除角色及权限配置 |
+| `system.params` | 系统参数 | `/api/system/params` | 修改参数值 |
+| `user` | 个人中心 | `/api/user` | 修改资料、登录态修改密码 |
+
+**定时任务**（`logType=job`）：
+
+| module 值 | 对应业务 | 说明 |
+|-----------|----------|------|
+| `job` | 定时任务 | 固定为 `job`；`jobName` 为具体任务名（如客户保护期到期转公海） |
+
+**不会写入 `user_operation` 日志的情况**（筛选时不会出现对应 module）：
+
+| 说明 | 示例 |
+|------|------|
+| 认证模块整体排除 | `/api/auth/**`（登录、注册、登出、发验证码等） |
+| URI 显式跳过 | 文件上传 `*/upload`、公开短信重置密码 `*/password/reset` |
+| 仅查询接口 | 各模块 `GET` 列表/详情；`/api/system/operation-logs` 自身 |
+| 无写操作接口 | `/api/file` 仅有上传（上传被跳过），通常无 `file` 日志 |
+
+> 实际库中出现的 `module` 取决于是否发生过对应写操作；上表为**会写入日志的业务模块**完整对照。方法上可使用 `@OperationLogRecord(module="...", ...)` 覆盖默认推导值。
+
+#### 4.5.2 详情
+
+```
+GET /api/system/operation-logs/{id}
+```
+
+#### 4.5.3 自动记录说明
+
+**用户操作**（`log_type=user_operation`）  
+- 切面自动拦截 `modules` 下各 Controller 的 `POST`/`PUT`/`PATCH`/`DELETE`（排除 `/api/auth/**`、文件上传、公开重置密码等）。  
+- `module` 默认由类上 `@RequestMapping` 推导，规则与 [4.5.1.1](#4511-module-可选值业务模块) 一致。  
+- 可在方法上使用 `@OperationLogRecord(module="", action="", summary="")` 覆盖 `module`/`action`/摘要。  
+
+**定时任务**（`log_type=job`）  
+- 在 Job 中通过 `ScheduledJobLogHelper.run(jobName, methodName, supplier)` 记录执行结果。  
+- 示例：`ClientProtectionExpireJob` 记录保护期到期转入公海条数。
+
+### 4.6 系统设置常见错误
 
 | code | 场景 |
 |------|------|
@@ -1609,6 +1784,7 @@ Response:
 | GET | `/api/clients` | 客户分页列表（数据权限 + 联系人电话脱敏） |
 | GET | `/api/clients/public-pool` | 公海客户分页（联系人电话全量脱敏） |
 | POST | `/api/clients/public-pool/{id}/claim` | 认领公海客户 |
+| POST | `/api/clients/{id}/public-pool` | 投放客户到公海 |
 | GET | `/api/clients/{id}` | 客户详情（含联系人、来访记录） |
 | POST | `/api/clients` | 新增客户（可关联联系人） |
 | PUT | `/api/clients/{id}` | 修改客户 |
@@ -1677,13 +1853,14 @@ POST /api/clients
 
 说明:
 - clientName: 必填
-- idType / idNumber: 可选，但若填写须同时填写；组合唯一不可重复
+- idType / idNumber: 可选，但若填写须同时填写；其中 `idNumber` 全局唯一不可重复
 - contactIds: 可选，已有联系人 ID 列表
 - newContacts: 可选，新建联系人信息列表；元素字段同 POST /api/contacts（contactName、contactPhone 必填）
 - contactIds 与 newContacts 至少传其一或都不传；都传时先创建 newContacts 再与 contactIds 一并关联
 - 创建人自动记录为当前登录用户
 - 新建客户状态默认为 `mine`（我的客户）
 - 同时写入 `claimTime`（认领时间）
+- 修改客户（`PUT /api/clients/{id}`）时同样执行证件编号查重校验
 
 Response.data: 新建客户 ID（long）
 ```
@@ -1731,6 +1908,18 @@ POST /api/clients/public-pool/{id}/claim
 
 Response.data: ClientVO（同列表单条）
 ```
+
+#### 投放客户到公海
+
+```
+POST /api/clients/{id}/public-pool
+```
+
+说明:
+- 仅在当前用户可见的数据权限内可操作该客户
+- 校验该客户不存在未退租成交：`deal_data` 中若存在 `clientIds` 包含该客户且 `actualEndDate` 为空，则禁止投放
+- 允许「无成交」或「全部成交均已退租」的客户投放公海
+- 投放后：`client_status=public_pool`，`created_by=null`，`claimTime=null`
 
 ### 6.3 客户分页列表
 
@@ -1841,6 +2030,12 @@ Response:
         "visitDate": "2026-05-15",
         "clientId": 1,
         "clientName": "张三",
+        "contactId": 10,
+        "contact": {
+          "id": 10,
+          "contactName": "李四",
+          "contactPhone": "138****8000"
+        },
         "houseIds": [1, 2],
         "houses": [
           { "id": 1, "houseName": "A栋101" },
@@ -2052,6 +2247,8 @@ Response:
 | visitDate | date | 跟进/来访日期，格式 `yyyy-MM-dd` |
 | clientId | long | 关联客户 ID |
 | clientName | string | 客户姓名（列表/详情 enrich 填充） |
+| contactId | long | 本次来访关联的联系人 ID，可为 null |
+| contact | object | 联系人详情（enrich 填充），结构见 [ContactVO](#contactvo)；无权限或未关联时不返回 |
 | houseIds | long[] | 带看房源 ID 列表，可为 null 或空数组 |
 | houses | array | 房源摘要列表，元素见下表 |
 | channelId | long | 渠道类型 ID，可为 null |
@@ -2085,7 +2282,7 @@ Response:
 | 所属**项目部** | 本项目部**成员添加**的来访 |
 | 未分配部门 | 不可见 |
 
-新建来访时自动写入当前登录用户为 `createdBy`；关联客户须在权限范围内；带看房源须在 [8.1 房源数据权限](#81-数据权限) 范围内。
+新建来访时自动写入当前登录用户为 `createdBy`；关联客户须在权限范围内；带看房源须在 [8.1 房源数据权限](#81-数据权限) 范围内。若传 `contactId`，联系人须存在、在数据权限范围内，且已通过 `client_contact_relation` 绑定该客户。
 
 ### 7.2 来访分页列表
 
@@ -2116,6 +2313,13 @@ Response:
         "visitDate": "2026-05-15",
         "clientId": 1,
         "clientName": "张三",
+        "contactId": 10,
+        "contact": {
+          "id": 10,
+          "contactName": "李四",
+          "contactPhone": "138****8000",
+          "model": "客户"
+        },
         "houseIds": [1, 2],
         "houses": [
           { "id": 1, "houseName": "A栋101" },
@@ -2156,6 +2360,13 @@ Response:
     "visitDate": "2026-05-15",
     "clientId": 1,
     "clientName": "张三",
+    "contactId": 10,
+    "contact": {
+      "id": 10,
+      "contactName": "李四",
+      "contactPhone": "138****8000",
+      "model": "客户"
+    },
     "houseIds": [1, 2],
     "houses": [
       { "id": 1, "houseName": "A栋101" },
@@ -2185,12 +2396,26 @@ Request:
 {
   "visitDate": "2026-05-15",
   "clientId": 1,
+  "contactId": 10,
   "houseIds": [1, 2],
   "channelId": 1,
   "channelInstanceId": 1,
   "detailDescription": "首次到访",
   "requirementsConfig": { "面积": "500", "预算": "100万" }
 }
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| visitDate | date | 是 | 跟进/来访日期 |
+| clientId | long | 是 | 客户 ID |
+| contactId | long | 否 | 本次来访联系人 ID，须已绑定该客户 |
+| houseIds | long[] | 否 | 带看房源 ID 列表 |
+| channelId | long | 否 | 渠道类型 ID |
+| channelInstanceId | long | 否 | 渠道实例 ID |
+| channelInstanceName | string | 否 | 渠道实例名称（手填） |
+| detailDescription | string | 否 | 详情说明 |
+| requirementsConfig | object | 否 | 需求清单 JSON |
 
 渠道实例规则（channelId 对应渠道类型）:
 | 渠道类型 | instanceType / 名称 | channelInstanceId | channelInstanceName |
@@ -2202,7 +2427,14 @@ Request:
 | 市场自来等 | none | 不需传 | 可选手填 |
 
 Response.data 为新建来访 ID
+
+### 7.5 修改来访
+
 ```
+PUT /api/visits/{id}
+```
+
+请求体字段均可选（部分更新）；`contactId` 不传表示不修改；传入时须满足与新增相同的客户绑定校验。若仅修改 `clientId`，会校验原 `contactId` 是否仍绑定新客户。
 
 ---
 
@@ -2249,6 +2481,7 @@ DELETE /api/visit-drafts/{id}
 {
   "visitDate": "2026-05-15",
   "clientId": 1,
+  "contactId": 10,
   "houseIds": [1, 2],
   "channelId": 1,
   "channelInstanceId": null,
@@ -2258,7 +2491,11 @@ DELETE /api/visit-drafts/{id}
 }
 ```
 
-响应 `VisitDraftVO` 结构类似 [VisitVO](#visitvo)，含 `createdBy`、`createTime`、`updateTime`；列表/详情会 enrich 客户名、渠道名、房源摘要。
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| contactId | long | 本次来访联系人 ID，可为 null；PUT 全量覆盖业务字段时传 null 可清空 |
+
+响应 `VisitDraftVO` 结构类似 [VisitVO](#visitvo)，含 `contactId`、`contact`、`createdBy`、`createTime`、`updateTime`；列表/详情会 enrich 客户名、联系人、渠道名、房源摘要。
 
 ---
 
@@ -2739,6 +2976,7 @@ Request:
 说明:
 - `dealBusinessUserId`、`contactBusinessUserId` 由系统自动设为当前登录用户，无需传入
 - houseIds、clientIds：至少各选 1 个，须在数据权限内；房源须为**闲置**（`houseStatus=idle`），成交创建成功后自动改为在租
+- 关联客户的**证件编号**（`idNumber`）均不能为空，否则返回 40002
 - channelTypeId：必填；渠道实例规则同来访（见 §7.4）
 - rentalArea：可选；不传则按所选房源适租面积之和自动计算
 - guidePriceId、assessedPriceId：系统按主房源（houseIds[0]）及签订日期自动匹配时点指导价/评估价

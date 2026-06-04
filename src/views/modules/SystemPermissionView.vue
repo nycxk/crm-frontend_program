@@ -20,7 +20,7 @@
         </div>
       </template>
 
-      <el-table :data="tableData" v-loading="loading" stripe>
+      <el-table :data="tableData" v-loading="loading" stripe highlight-current-row @row-click="openEditDialog">
         <el-table-column prop="id" label="ID" width="70" />
         <el-table-column prop="roleCode" label="角色编码" min-width="160" />
         <el-table-column prop="roleName" label="角色名称" width="140" />
@@ -33,28 +33,6 @@
         </el-table-column>
         <el-table-column label="创建时间" width="180">
           <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
-        </el-table-column>
-        <el-table-column label="操作" width="160" fixed="right">
-          <template #default="{ row }">
-            <el-button
-              link
-              type="primary"
-              size="small"
-              :disabled="row.roleCode === 'SYSTEM_ADMIN'"
-              @click="openEditDialog(row.id)"
-            >
-              编辑
-            </el-button>
-            <el-button
-              link
-              type="danger"
-              size="small"
-              :disabled="row.roleCode === 'SYSTEM_ADMIN'"
-              @click="handleDelete(row)"
-            >
-              删除
-            </el-button>
-          </template>
         </el-table-column>
       </el-table>
 
@@ -114,7 +92,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted, nextTick } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import type { ElTree } from 'element-plus'
 import {
@@ -123,7 +101,6 @@ import {
   getRoleDetail,
   createRole,
   updateRole,
-  deleteRole,
   type RoleRecord,
   type ModuleTreeNode,
 } from '@/api/system'
@@ -224,15 +201,16 @@ async function openCreateDialog() {
   dialogVisible.value = true
 }
 
-async function openEditDialog(id: number) {
+async function openEditDialog(row: RoleRecord) {
+  if (row.roleCode === 'SYSTEM_ADMIN') return
   if (!moduleTree.value.length) {
     await fetchModuleTree()
   }
   isEdit.value = true
-  editId.value = id
+  editId.value = row.id
   resetForm()
   try {
-    const detail = await getRoleDetail(id)
+    const detail = await getRoleDetail(row.id)
     form.roleCode = detail.roleCode
     form.roleName = detail.roleName
     form.description = detail.description || ''
@@ -276,20 +254,6 @@ async function handleSubmit() {
   } finally {
     submitLoading.value = false
   }
-}
-
-function handleDelete(row: RoleRecord) {
-  ElMessageBox.confirm(
-    `确认删除角色「${row.roleName}（${row.roleCode}）」吗？已分配用户的角色不可删除。`,
-    '删除确认',
-    { confirmButtonText: '确定删除', cancelButtonText: '取消', type: 'warning' },
-  )
-    .then(async () => {
-      await deleteRole(row.id)
-      ElMessage.success('已删除')
-      fetchList()
-    })
-    .catch(() => {})
 }
 
 onMounted(() => {

@@ -32,7 +32,7 @@
         </div>
       </template>
 
-      <el-table :data="tableData" v-loading="loading" stripe>
+      <el-table :data="tableData" v-loading="loading" stripe highlight-current-row @row-click="openDetailDialog">
         <el-table-column prop="id" label="ID" width="70" />
         <el-table-column prop="username" label="用户名" min-width="120" />
         <el-table-column prop="phone" label="手机号" width="140" />
@@ -67,28 +67,6 @@
             {{ formatTime(row.createdAt) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="240" fixed="right">
-          <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="openEditDialog(row.id)">
-              编辑
-            </el-button>
-            <el-button link type="warning" size="small" @click="openPhoneDialog(row)">
-              修改手机号
-            </el-button>
-            <el-button link type="success" size="small" @click="handleResetPwd(row)">
-              重置密码
-            </el-button>
-            <el-button
-              link
-              type="danger"
-              size="small"
-              @click="handleDisable(row)"
-              :disabled="row.status === 3"
-            >
-              禁用
-            </el-button>
-          </template>
-        </el-table-column>
       </el-table>
 
       <div class="pagination-wrap">
@@ -103,6 +81,51 @@
         />
       </div>
     </el-card>
+
+    <el-dialog
+      v-model="detailVisible"
+      width="700px"
+      :close-on-click-modal="false"
+    >
+      <template #header>
+        <div class="detail-header">
+          <span>人员详情</span>
+          <div class="detail-header-actions">
+            <el-button type="primary" size="small" @click="detailRow && openEditDialog(detailRow.id)">编辑</el-button>
+            <el-button type="warning" size="small" @click="detailRow && openPhoneDialog(detailRow)">修改手机号</el-button>
+            <el-button type="success" size="small" @click="detailRow && handleResetPwd(detailRow)">重置密码</el-button>
+            <el-button
+              type="danger"
+              size="small"
+              :disabled="!detailRow || detailRow.status === 3"
+              @click="detailRow && handleDisable(detailRow)"
+            >禁用</el-button>
+          </div>
+        </div>
+      </template>
+      <template v-if="detailRow">
+        <el-descriptions :column="2" border>
+          <el-descriptions-item label="用户名">{{ detailRow.username }}</el-descriptions-item>
+          <el-descriptions-item label="手机号">{{ detailRow.phone }}</el-descriptions-item>
+          <el-descriptions-item label="邮箱">{{ detailRow.email || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="部门">{{ detailRow.departmentName || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="状态" :span="1">
+            <el-tag v-if="detailRow.status === 1" type="success" size="small">激活</el-tag>
+            <el-tag v-else-if="detailRow.status === 2" type="warning" size="small">未激活</el-tag>
+            <el-tag v-else type="danger" size="small">封禁</el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="创建时间">{{ formatTime(detailRow.createdAt) }}</el-descriptions-item>
+        </el-descriptions>
+
+        <h4 class="section-title">角色列表</h4>
+        <div v-if="detailRow.roles?.length" class="role-list">
+          <el-tag v-for="role in detailRow.roles" :key="role.id" size="small" class="role-tag">
+            {{ role.roleName }}
+          </el-tag>
+        </div>
+        <el-empty v-else description="暂无角色" :image-size="60" />
+      </template>
+    </el-dialog>
 
     <el-dialog
       v-model="dialogVisible"
@@ -204,6 +227,8 @@ import {
 const loading = ref(false)
 const submitLoading = ref(false)
 const dialogVisible = ref(false)
+const detailVisible = ref(false)
+const detailRow = ref<StaffRecord | null>(null)
 const isEdit = ref(false)
 const editId = ref(0)
 const formRef = ref<FormInstance>()
@@ -318,6 +343,11 @@ function openCreateDialog() {
   editId.value = 0
   resetForm()
   dialogVisible.value = true
+}
+
+function openDetailDialog(row: StaffRecord) {
+  detailRow.value = row
+  detailVisible.value = true
 }
 
 async function openEditDialog(id: number) {
@@ -452,4 +482,8 @@ onMounted(() => {
   justify-content: flex-end;
   margin-top: 16px;
 }
+.detail-header { display: flex; justify-content: space-between; align-items: center; width: 100%; }
+.detail-header-actions { display: flex; gap: 8px; }
+.section-title { margin: 20px 0 12px; }
+.role-list { margin-bottom: 16px; }
 </style>

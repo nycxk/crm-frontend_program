@@ -5,6 +5,8 @@ export interface ContactRecord {
   contactName: string
   contactPhone: string
   model: string | null
+  agencyId: number | null
+  agencyName: string | null
   remark: string | null
   createTime: string
   updateTime: string
@@ -20,7 +22,8 @@ export interface ContactQuery {
 export interface ContactSaveParams {
   contactName: string
   contactPhone: string
-  model?: string
+  model: string
+  agencyId?: number
   remark?: string
 }
 

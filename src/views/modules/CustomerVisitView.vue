@@ -67,14 +67,24 @@
         </div>
       </template>
 
-      <el-table :data="tableData" v-loading="loading" stripe>
+      <el-table :data="tableData" v-loading="loading" stripe highlight-current-row @row-click="openVisitDetail">
         <el-table-column prop="id" label="ID" width="70" />
         <el-table-column prop="visitDate" label="来访日期" width="120" />
         <el-table-column label="客户" min-width="100">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="openClientDetail(row.clientId)">
+            <el-button link type="primary" size="small" @click.stop="openClientDetail(row.clientId)">
               {{ row.clientName }}
             </el-button>
+          </template>
+        </el-table-column>
+        <el-table-column label="联系人" min-width="110">
+          <template #default="{ row }">
+            <template v-if="row.contact">
+              <el-button link type="primary" size="small" @click.stop="openContactDetailPopup(row.contact.id)">
+                {{ row.contact.contactName }}
+              </el-button>
+            </template>
+            <span v-else>-</span>
           </template>
         </el-table-column>
         <el-table-column label="带看房源" min-width="140">
@@ -87,7 +97,7 @@
                 type="primary"
                 size="small"
                 class="item-link"
-                @click="openHouseDetail(h.id)"
+                @click.stop="openHouseDetail(h.id)"
               >
                 {{ h.houseName }}
               </el-button>
@@ -115,12 +125,6 @@
               </el-tag>
             </template>
             <span v-else>-</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="140" fixed="right">
-          <template #default="{ row }">
-            <el-button link size="small" :disabled="row.createdBy !== userStore.userId" @click="openEditDialog(row.id)">编辑</el-button>
-            <el-button link type="danger" size="small" :disabled="row.createdBy !== userStore.userId" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -155,12 +159,22 @@
           />
         </el-form-item>
         <el-form-item label="客户" prop="clientId">
-          <el-select v-model="form.clientId" filterable clearable placeholder="选择客户" style="width:100%">
+          <el-select v-model="form.clientId" filterable clearable placeholder="选择客户" style="width:100%" @change="onClientChange">
             <el-option
               v-for="c in clientList"
               :key="c.id"
               :value="c.id"
               :label="c.clientName"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="联系人" v-if="form.clientId">
+          <el-select v-model="form.contactId" clearable filterable placeholder="选择客户联系人" style="width:100%">
+            <el-option
+              v-for="ct in clientContactList"
+              :key="ct.id"
+              :value="ct.id"
+              :label="`${ct.contactName}（${ct.contactPhone}）`"
             />
           </el-select>
         </el-form-item>
@@ -309,6 +323,9 @@
           <el-table-column prop="contactName" label="姓名" />
           <el-table-column prop="contactPhone" label="电话" />
           <el-table-column prop="model" label="从属类型" />
+          <el-table-column label="关联中介">
+            <template #default="{ row: c }">{{ c.agencyName || '-' }}</template>
+          </el-table-column>
           <el-table-column prop="remark" label="备注" />
         </el-table>
 
@@ -426,22 +443,98 @@
         >继续添加来访</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="visitDetailVisible"
+      width="700px"
+      :close-on-click-modal="false"
+    >
+      <template #header>
+        <div class="detail-header">
+          <span>来访详情</span>
+          <div class="detail-header-actions">
+            <el-button
+              type="primary"
+              size="small"
+              :disabled="!visitDetail || visitDetail.createdBy !== userStore.userId"
+              @click="visitDetail && openEditDialog(visitDetail.id)"
+            >
+              编辑
+            </el-button>
+          </div>
+        </div>
+      </template>
+      <template v-if="visitDetail">
+        <el-descriptions :column="2" border>
+          <el-descriptions-item label="来访日期">{{ visitDetail.visitDate }}</el-descriptions-item>
+          <el-descriptions-item label="客户">{{ visitDetail.clientName }}</el-descriptions-item>
+          <el-descriptions-item label="联系人">
+            <template v-if="visitDetail.contact">
+              <el-button link type="primary" size="small" @click="openContactDetailPopup(visitDetail.contact.id)">
+                {{ visitDetail.contact.contactName }}（{{ visitDetail.contact.contactPhone }}）
+              </el-button>
+            </template>
+            <span v-else>-</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="渠道">{{ visitDetail.channelTypeName || '-' }}
+            <template v-if="visitDetail.channelInstanceName"> / {{ visitDetail.channelInstanceName }}</template>
+          </el-descriptions-item>
+          <el-descriptions-item label="添加人">{{ visitDetail.createdBy || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="详情说明" :span="2">{{ visitDetail.detailDescription || '-' }}</el-descriptions-item>
+        </el-descriptions>
+
+        <h4 class="section-title">带看房源</h4>
+        <el-table v-if="visitDetail.houses?.length" :data="visitDetail.houses" size="small" stripe highlight-current-row @row-click="(h: any) => openHouseDetail(h.id)">
+          <el-table-column prop="houseName" label="房源名称" />
+          <el-table-column label="状态" width="100">
+            <template #default="{ row: h }">
+              <el-tag :type="h.houseStatus === 'idle' ? '' : 'success'" size="small">
+                {{ h.houseStatusName }}
+              </el-tag>
+            </template>
+          </el-table-column>
+        </el-table>
+        <el-empty v-else description="无带看房源" :image-size="60" />
+
+        <h4 class="section-title">需求清单</h4>
+        <el-table v-if="visitDetail.requirementsConfig && Object.keys(visitDetail.requirementsConfig).length" :data="reqTableData" size="small" stripe>
+          <el-table-column prop="key" label="需求项" />
+          <el-table-column prop="value" label="内容" />
+        </el-table>
+        <el-empty v-else description="无需求记录" :image-size="60" />
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="contactDetailVisible" title="联系人详情" width="480px" :close-on-click-modal="false">
+      <template v-if="contactDetail">
+        <el-descriptions :column="1" border>
+          <el-descriptions-item label="姓名">{{ contactDetail.contactName }}</el-descriptions-item>
+          <el-descriptions-item label="手机号">{{ contactDetail.contactPhone }}</el-descriptions-item>
+          <el-descriptions-item label="从属类型">{{ contactDetail.model || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="关联中介">{{ contactDetail.agencyName || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="备注">{{ contactDetail.remark || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="创建时间">{{ formatTime(contactDetail.createTime) }}</el-descriptions-item>
+          <el-descriptions-item label="更新时间">{{ formatTime(contactDetail.updateTime) }}</el-descriptions-item>
+        </el-descriptions>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ref, reactive, onMounted, computed } from 'vue'
+import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import {
-  getVisitList, getVisitDetail, createVisit, updateVisit, deleteVisit,
+  getVisitList, getVisitDetail, createVisit, updateVisit,
   type VisitRecord,
 } from '@/api/visit'
 import {
-  getVisitDraftList, getVisitDraftDetail, createVisitDraft, updateVisitDraft, deleteVisitDraft,
+  getVisitDraftList, createVisitDraft, updateVisitDraft, deleteVisitDraft,
   type VisitDraftRecord,
 } from '@/api/visit-draft'
-import { getClientList, getClientDetail, type ClientRecord, type ClientDetail } from '@/api/client'
+import { getClientList, getClientDetail, getClientContacts, type ClientRecord, type ClientDetail, type ClientContact } from '@/api/client'
+import { getContactDetail, type ContactRecord } from '@/api/contact'
 import { getDealList, type DealRecord } from '@/api/deal'
 import { getHouseList, getHouseDetail, type HouseDetail } from '@/api/house'
 import { getChannelList, getAgencyList, type ChannelRecord, type AgencyRecord } from '@/api/channel'
@@ -466,12 +559,25 @@ const houseList = ref<{ id: number; houseName: string }[]>([])
 const agencyList = ref<AgencyRecord[]>([])
 const selectedChannel = ref<ChannelRecord | null>(null)
 
+const clientContactList = ref<ClientContact[]>([])
+
+const contactDetailVisible = ref(false)
+const contactDetail = ref<ContactRecord | null>(null)
+
 const clientDetailVisible = ref(false)
 const clientDetail = ref<ClientDetail | null>(null)
 const clientDeals = ref<DealRecord[]>([])
 
 const houseDetailVisible = ref(false)
 const houseDetail = ref<HouseDetail | null>(null)
+
+const visitDetailVisible = ref(false)
+const visitDetail = ref<VisitRecord | null>(null)
+
+const reqTableData = computed(() => {
+  if (!visitDetail.value?.requirementsConfig) return []
+  return Object.entries(visitDetail.value.requirementsConfig).map(([key, value]) => ({ key, value }))
+})
 
 const reqSchema = ref<{ key: string; type: string }[]>([])
 
@@ -494,6 +600,7 @@ const query = reactive({
 const form = reactive({
   visitDate: '',
   clientId: undefined as number | undefined,
+  contactId: undefined as number | undefined,
   houseIds: [] as number[],
   channelId: undefined as number | undefined,
   channelInstanceId: undefined as number | undefined,
@@ -516,6 +623,7 @@ function formatTime(dateStr: string) {
 function fillFormFromDraft(d: VisitDraftRecord) {
   form.visitDate = d.visitDate || ''
   form.clientId = d.clientId ?? undefined
+  form.contactId = undefined
   form.houseIds = d.houseIds || []
   form.channelId = d.channelId ?? undefined
   form.channelInstanceId = d.channelInstanceId ?? undefined
@@ -533,6 +641,7 @@ function buildSavePayload() {
   const payload: any = {
     visitDate: form.visitDate || undefined,
     clientId: form.clientId,
+    contactId: form.contactId,
     houseIds: form.houseIds.length ? form.houseIds : undefined,
     channelId: form.channelId,
     detailDescription: form.detailDescription || undefined,
@@ -588,6 +697,7 @@ function handleReset() {
 function resetForm() {
   form.visitDate = ''
   form.clientId = undefined
+  form.contactId = undefined
   form.houseIds = []
   form.channelId = undefined
   form.channelInstanceId = undefined
@@ -595,6 +705,7 @@ function resetForm() {
   form.detailDescription = ''
   form.reqValues = {}
   selectedChannel.value = null
+  clientContactList.value = []
   formRef.value?.resetFields()
 }
 
@@ -609,6 +720,16 @@ async function fetchReqSchema() {
     }
   } catch {
     reqSchema.value = []
+  }
+}
+
+async function onClientChange(clientId: number | undefined) {
+  form.contactId = undefined
+  clientContactList.value = []
+  if (clientId) {
+    try {
+      clientContactList.value = await getClientContacts(clientId)
+    } catch { /* ignore */ }
   }
 }
 
@@ -641,6 +762,10 @@ async function openEditDialog(id: number) {
     const [detail] = await Promise.all([getVisitDetail(id), fetchReqSchema()])
     form.visitDate = detail.visitDate
     form.clientId = detail.clientId
+    form.contactId = detail.contactId ?? undefined
+    if (detail.contactId) {
+      try { clientContactList.value = await getClientContacts(detail.clientId) } catch { /* ignore */ }
+    }
     form.houseIds = detail.houseIds || []
     houseList.value = detail.houses || []
     form.detailDescription = detail.detailDescription || ''
@@ -697,14 +822,9 @@ async function handleSubmit() {
   }
 }
 
-function handleDelete(row: VisitRecord) {
-  ElMessageBox.confirm(
-    '确认删除该来访记录吗？',
-    '删除确认',
-    { confirmButtonText: '确定删除', cancelButtonText: '取消', type: 'warning' },
-  )
-    .then(async () => { await deleteVisit(row.id); ElMessage.success('已删除'); fetchList() })
-    .catch(() => {})
+async function openVisitDetail(row: VisitRecord) {
+  visitDetail.value = row
+  visitDetailVisible.value = true
 }
 
 async function openClientDetail(id: number) {
@@ -742,6 +862,7 @@ async function startVisitFromClient(c: ClientDetail | null) {
   resetForm()
   await fetchReqSchema()
   form.clientId = c.id
+  onClientChange(c.id)
   dialogVisible.value = true
 }
 
@@ -806,6 +927,17 @@ async function deleteDraftItem(id: number) {
   }
 }
 
+async function openContactDetailPopup(id: number) {
+  contactDetail.value = null
+  contactDetailVisible.value = true
+  try {
+    contactDetail.value = await getContactDetail(id)
+  } catch {
+    ElMessage.error('获取联系人详情失败')
+    contactDetailVisible.value = false
+  }
+}
+
 onMounted(() => { fetchList(); fetchOptions() })
 </script>
 
@@ -814,6 +946,8 @@ onMounted(() => { fetchList(); fetchOptions() })
 .search-card :deep(.el-card__body) { padding-bottom: 0; }
 .card-header { display: flex; justify-content: space-between; align-items: center; }
 .card-header-actions { display: flex; gap: 8px; }
+.detail-header { display: flex; justify-content: space-between; align-items: center; width: 100%; }
+.detail-header-actions { display: flex; gap: 8px; }
 .item-tag { margin-right: 4px; margin-bottom: 2px; }
 .item-link { margin-right: 4px; }
 .section-title { margin: 20px 0 12px; }

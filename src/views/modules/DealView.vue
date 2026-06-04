@@ -38,7 +38,7 @@
         </div>
       </template>
 
-      <el-table :data="tableData" v-loading="loading" stripe>
+      <el-table :data="tableData" v-loading="loading" stripe highlight-current-row @row-click="openDetailDialog">
         <el-table-column prop="id" label="ID" width="70" />
         <el-table-column label="客户" min-width="120">
           <template #default="{ row }">
@@ -49,7 +49,7 @@
               type="primary"
               size="small"
               class="item-link"
-              @click="openClientDetailPopup(c.id)"
+              @click.stop="openClientDetailPopup(c.id)"
             >{{ c.clientName }}</el-button>
           </template>
         </el-table-column>
@@ -62,7 +62,7 @@
               type="primary"
               size="small"
               class="item-link"
-              @click="openHouseDetailPopup(h.id)"
+              @click.stop="openHouseDetailPopup(h.id)"
             >{{ h.houseName }}</el-button>
           </template>
         </el-table-column>
@@ -80,14 +80,6 @@
             <el-tag :type="row.actualEndDate ? 'info' : 'success'" size="small">
               {{ row.actualEndDate ? '已退' : '在租' }}
             </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="200" fixed="right">
-          <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="openDetailDialog(row.id)">详情</el-button>
-            <el-button link type="primary" size="small" @click="openEditDialog(row.id)" :disabled="!!row.actualEndDate || row.contactBusinessUserId !== userStore.userId">编辑</el-button>
-            <el-button link type="warning" size="small" @click="openCheckoutDialog(row)" :disabled="!!row.actualEndDate || row.contactBusinessUserId !== userStore.userId">退租</el-button>
-            <el-button link type="danger" size="small" :disabled="row.contactBusinessUserId !== userStore.userId" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -216,7 +208,26 @@
       </div>
     </el-dialog>
 
-    <el-dialog v-model="detailVisible" title="成交详情" width="800px" :close-on-click-modal="false">
+    <el-dialog v-model="detailVisible" width="800px" :close-on-click-modal="false">
+      <template #header>
+        <div class="detail-header">
+          <span>成交详情</span>
+          <div class="detail-header-actions">
+            <el-button
+              type="primary"
+              size="small"
+              :disabled="!detail || !!detail.actualEndDate || detail.contactBusinessUserId !== userStore.userId"
+              @click="detail && openEditDialog(detail.id)"
+            >编辑</el-button>
+            <el-button
+              type="warning"
+              size="small"
+              :disabled="!detail || !!detail.actualEndDate || detail.contactBusinessUserId !== userStore.userId"
+              @click="detail && openCheckoutDialog(detail)"
+            >退租</el-button>
+          </div>
+        </div>
+      </template>
       <template v-if="detail">
         <el-descriptions :column="2" border>
           <el-descriptions-item label="客户">
@@ -398,10 +409,10 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import {
-  getDealList, getDealDetail, createDeal, updateDeal, checkoutDeal, deleteDeal,
+  getDealList, getDealDetail, createDeal, updateDeal, checkoutDeal,
   type DealRecord,
 } from '@/api/deal'
 import {
@@ -668,16 +679,9 @@ async function handleSubmit() {
   } finally { submitLoading.value = false }
 }
 
-function handleDelete(row: DealRecord) {
-  ElMessageBox.confirm('确认删除该成交记录吗？', '删除确认',
-    { confirmButtonText: '确定删除', cancelButtonText: '取消', type: 'warning' })
-    .then(async () => { await deleteDeal(row.id); ElMessage.success('已删除'); fetchList() })
-    .catch(() => {})
-}
-
-async function openDetailDialog(id: number) {
+async function openDetailDialog(row: DealRecord) {
   detail.value = null; detailVisible.value = true
-  try { detail.value = await getDealDetail(id) }
+  try { detail.value = await getDealDetail(row.id) }
   catch { ElMessage.error('获取详情失败'); detailVisible.value = false }
 }
 
@@ -801,6 +805,8 @@ onMounted(() => { fetchList(); fetchOptions() })
 .search-card :deep(.el-card__body) { padding-bottom: 0; }
 .card-header { display: flex; justify-content: space-between; align-items: center; }
 .card-header-actions { display: flex; gap: 8px; }
+.detail-header { display: flex; justify-content: space-between; align-items: center; width: 100%; }
+.detail-header-actions { display: flex; gap: 8px; }
 .item-tag { margin-right: 4px; margin-bottom: 2px; }
 .item-link { margin-right: 4px; }
 .section-title { margin: 20px 0 12px; }
