@@ -15,6 +15,12 @@
           <span style="margin:0 8px">至</span>
           <el-date-picker v-model="query.initiateDateTo" type="date" value-format="YYYY-MM-DD" placeholder="止" style="width:140px" @change="handleSearch" />
         </el-form-item>
+        <el-form-item label="状态">
+          <el-select v-model="query.status" placeholder="全部" style="width:120px" @change="handleSearch">
+            <el-option value="active" label="正在招租" />
+            <el-option value="stopped" label="停止招租" />
+          </el-select>
+        </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="handleSearch">查询</el-button>
           <el-button @click="handleReset">重置</el-button>
@@ -39,9 +45,28 @@
             </el-button>
           </template>
         </el-table-column>
+        <el-table-column label="经营部" width="120">
+          <template #default="{ row }">{{ row.house?.operationDepartmentName || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="项目部" width="120">
+          <template #default="{ row }">{{ row.house?.departmentName || '-' }}</template>
+        </el-table-column>
         <el-table-column prop="initiateDate" label="发起日期" width="110" />
         <el-table-column prop="stopDate" label="停止日期" width="110">
           <template #default="{ row }">{{ row.stopDate || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="看房联系人" min-width="120">
+          <template #default="{ row }">
+            <template v-if="row.viewingUsers?.length">
+              <el-tag
+                v-for="u in row.viewingUsers"
+                :key="u.id"
+                size="small"
+                class="item-tag"
+              >{{ u.username }}</el-tag>
+            </template>
+            <span v-else>-</span>
+          </template>
         </el-table-column>
         <el-table-column label="租赁面积" width="100" align="right">
           <template #default="{ row }">{{ row.rentalArea }} ㎡</template>
@@ -78,7 +103,7 @@
       <el-form ref="formRef" :model="form" :rules="formRules" label-width="100px">
         <el-form-item label="房源" prop="houseId">
           <el-select v-model="form.houseId" filterable placeholder="选择房源" style="width:100%">
-            <el-option v-for="h in houseList" :key="h.id" :value="h.id" :label="h.houseName" />
+            <el-option v-for="h in formHouseList" :key="h.id" :value="h.id" :label="h.houseName" />
           </el-select>
         </el-form-item>
         <el-row :gutter="16">
@@ -88,50 +113,47 @@
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="停止日期">
-              <el-date-picker v-model="form.stopDate" type="date" value-format="YYYY-MM-DD" style="width:100%" />
-            </el-form-item>
-          </el-col>
-        </el-row>
-        <el-row :gutter="16">
-          <el-col :span="12">
             <el-form-item label="租赁面积" prop="rentalArea">
               <el-input v-model="form.rentalArea" placeholder="㎡">
                 <template #suffix>㎡</template>
               </el-input>
             </el-form-item>
           </el-col>
+        </el-row>
+        <el-row :gutter="16">
           <el-col :span="12">
             <el-form-item label="参考价格" prop="referencePrice">
               <el-input v-model="form.referencePrice" placeholder="金额" style="width:100%" />
             </el-form-item>
           </el-col>
+          <el-col :span="12">
+            <el-form-item label="价格单位">
+              <el-select v-model="form.priceUnit" style="width:100%">
+                <el-option value="天" label="/ 天" />
+                <el-option value="月" label="/ 月" />
+                <el-option value="年" label="/ 年" />
+              </el-select>
+            </el-form-item>
+          </el-col>
         </el-row>
-        <el-form-item label="价格单位" class="price-unit-row">
-          <el-select v-model="form.priceUnit" style="width:160px">
-            <el-option value="天" label="/ 天" />
-            <el-option value="月" label="/ 月" />
-            <el-option value="年" label="/ 年" />
-          </el-select>
-          <span v-if="form.priceUnit && numRefPrice" class="price-calc">
-            <template v-if="form.priceUnit === '天'">
-              折合约 / 月：{{ calcMonthly.toLocaleString() }}，/ 年：{{ calcYearly.toLocaleString() }}
-            </template>
-            <template v-else-if="form.priceUnit === '月'">
-              折合约 / 天：{{ calcDaily.toLocaleString() }}，/ 年：{{ calcYearly.toLocaleString() }}
-            </template>
-            <template v-else>
-              折合约 / 天：{{ calcDaily.toLocaleString() }}，/ 月：{{ calcMonthly.toLocaleString() }}
-            </template>
-          </span>
+        <el-form-item v-if="form.priceUnit && numRefPrice" class="price-calc-row">
+          <template v-if="form.priceUnit === '天'">
+            折合约 / 月：{{ calcMonthly.toLocaleString() }}，/ 年：{{ calcYearly.toLocaleString() }}
+          </template>
+          <template v-else-if="form.priceUnit === '月'">
+            折合约 / 天：{{ calcDaily.toLocaleString() }}，/ 年：{{ calcYearly.toLocaleString() }}
+          </template>
+          <template v-else>
+            折合约 / 天：{{ calcDaily.toLocaleString() }}，/ 月：{{ calcMonthly.toLocaleString() }}
+          </template>
         </el-form-item>
         <el-form-item label="看房联系人">
-          <el-select v-model="form.contactIds" multiple filterable placeholder="选择联系人" style="width:100%">
+          <el-select v-model="form.viewingUserIds" multiple filterable placeholder="选择内部用户" style="width:100%">
             <el-option
-              v-for="c in contactList"
-              :key="c.id"
-              :value="c.id"
-              :label="`${c.contactName}（${c.contactPhone}）`"
+              v-for="s in staffList"
+              :key="s.id"
+              :value="s.id"
+              :label="s.username"
             />
           </el-select>
         </el-form-item>
@@ -160,7 +182,12 @@
         <div class="detail-header">
           <span>招租详情</span>
           <div class="detail-header-actions">
-            <el-button type="primary" size="small" @click="detail && openEditDialog(detail.id)">编辑</el-button>
+            <el-tooltip :content="detail?.stopDate ? '已停止招租，不可操作' : '生成招租海报'" placement="top">
+              <el-button type="primary" size="small" :loading="generatePosterLoading" :disabled="!!detail?.stopDate" @click="generatePoster">生成招租海报</el-button>
+            </el-tooltip>
+            <el-tooltip :content="detail?.stopDate ? '已停止招租，不可操作' : '编辑招租'" placement="top">
+              <el-button type="primary" size="small" :disabled="!!detail?.stopDate" @click="detail && openEditDialog(detail.id)">编辑</el-button>
+            </el-tooltip>
           </div>
         </div>
       </template>
@@ -195,12 +222,20 @@
         </div>
         <el-empty v-else description="暂无图片" :image-size="60" />
 
+        <h4 class="section-title">招租海报</h4>
+        <div v-if="detail.posterUrl" class="poster-wrap" style="display:flex; justify-content:center; padding:16px 0; background:#fafafa; border-radius:4px;">
+          <el-image
+            :src="resolveImageUrl(detail.posterUrl)"
+            fit="contain"
+            style="max-width:100%; max-height:600px; border-radius:4px; box-shadow:0 2px 12px rgba(0,0,0,0.1);"
+            :preview-src-list="[resolveImageUrl(detail.posterUrl)]"
+          />
+        </div>
+        <el-empty v-else description="未生成海报" :image-size="60" />
+
         <h4 class="section-title">看房联系人</h4>
-        <el-table v-if="detail.contacts?.length" :data="detail.contacts" size="small" stripe>
-          <el-table-column prop="contactName" label="姓名" />
-          <el-table-column prop="contactPhone" label="电话" />
-          <el-table-column prop="model" label="从属类型" />
-          <el-table-column prop="remark" label="备注" />
+        <el-table v-if="detail.viewingUsers?.length" :data="detail.viewingUsers" size="small" stripe>
+          <el-table-column prop="username" label="姓名" />
         </el-table>
         <el-empty v-else description="暂无联系人" :image-size="60" />
       </template>
@@ -272,12 +307,11 @@
 import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import {
-  getInternalRentList, getInternalRentDetail, createInternalRent, updateInternalRent,
+import { getInternalRentList, getInternalRentDetail, createInternalRent, updateInternalRent, generateInternalRentPoster,
   type InternalRentRecord,
 } from '@/api/internal-rent'
 import { getHouseList, getHouseDetail, resolveImageUrl, type HouseDetail } from '@/api/house'
-import { getContactList, type ContactRecord } from '@/api/contact'
+import { getStaffList, type StaffRecord } from '@/api/system'
 
 const loading = ref(false)
 const dialogVisible = ref(false)
@@ -288,7 +322,12 @@ const formRef = ref<FormInstance>()
 const tableData = ref<InternalRentRecord[]>([])
 const total = ref(0)
 const houseList = ref<{ id: number; houseName: string }[]>([])
-const contactList = ref<ContactRecord[]>([])
+const staffList = ref<StaffRecord[]>([])
+const generatePosterLoading = ref(false)
+
+const formHouseList = computed(() =>
+  houseList.value.filter((h) => (h as any).houseStatus === 'idle'),
+)
 
 const detailVisible = ref(false)
 const detail = ref<InternalRentRecord | null>(null)
@@ -300,6 +339,7 @@ const houseDetail = ref<HouseDetail | null>(null)
 const query = reactive({
   keyword: '',
   houseId: undefined as number | undefined,
+  status: 'active',
   initiateDateFrom: '' as string,
   initiateDateTo: '' as string,
   page: 1,
@@ -309,8 +349,7 @@ const query = reactive({
 const form = reactive({
   houseId: undefined as number | undefined,
   initiateDate: '',
-  stopDate: '' as string,
-  contactIds: [] as number[],
+  viewingUserIds: [] as number[],
   rentalArea: '',
   referencePrice: '',
   priceUnit: '',
@@ -369,6 +408,7 @@ async function fetchList() {
     const params: any = { page: query.page, size: query.size }
     if (query.keyword) params.keyword = query.keyword
     if (query.houseId) params.houseId = query.houseId
+    params.status = query.status
     if (query.initiateDateFrom) params.initiateDateFrom = query.initiateDateFrom
     if (query.initiateDateTo) params.initiateDateTo = query.initiateDateTo
     const res = await getInternalRentList(params)
@@ -378,18 +418,19 @@ async function fetchList() {
 }
 
 async function fetchOptions() {
-  const [housesRes, contactsRes] = await Promise.all([
+  const [housesRes, staffRes] = await Promise.all([
     getHouseList({ page: 1, size: 200 }),
-    getContactList({ page: 1, size: 200 }),
+    getStaffList({ page: 1, size: 200 }),
   ])
-  houseList.value = housesRes.records.map((h) => ({ id: h.id, houseName: h.houseName }))
-  contactList.value = contactsRes.records
+  houseList.value = housesRes.records.map((h: any) => ({ id: h.id, houseName: h.houseName, houseStatus: h.houseStatus }))
+  staffList.value = staffRes.records
 }
 
 function handleSearch() { query.page = 1; fetchList() }
 function handleReset() {
   query.keyword = ''
   query.houseId = undefined
+  query.status = 'active'
   query.initiateDateFrom = ''
   query.initiateDateTo = ''
   query.page = 1
@@ -399,8 +440,7 @@ function handleReset() {
 function resetForm() {
   form.houseId = undefined
   form.initiateDate = ''
-  form.stopDate = ''
-  form.contactIds = []
+  form.viewingUserIds = []
   form.rentalArea = ''
   form.referencePrice = ''
   form.priceUnit = ''
@@ -414,8 +454,7 @@ function buildSavePayload() {
   return {
     houseId: form.houseId!,
     initiateDate: form.initiateDate,
-    stopDate: form.stopDate || undefined,
-    contactIds: form.contactIds.length ? form.contactIds : undefined,
+    viewingUserIds: form.viewingUserIds.length ? form.viewingUserIds : undefined,
     rentalArea: Number(form.rentalArea),
     referencePrice: Number(form.referencePrice),
     priceUnit: form.priceUnit || undefined,
@@ -438,8 +477,7 @@ async function openEditDialog(id: number) {
     const d = await getInternalRentDetail(id)
     form.houseId = d.houseId
     form.initiateDate = d.initiateDate
-    form.stopDate = d.stopDate || ''
-    form.contactIds = d.contactIds || []
+    form.viewingUserIds = d.viewingUserIds || []
     form.rentalArea = String(d.rentalArea)
     form.referencePrice = String(d.referencePrice)
     form.priceUnit = d.priceUnit || ''
@@ -488,6 +526,20 @@ async function openDetailDialog(id: number) {
   catch { ElMessage.error('获取详情失败'); detailVisible.value = false }
 }
 
+async function generatePoster() {
+  if (!detail.value) return
+  generatePosterLoading.value = true
+  try {
+    const updated = await generateInternalRentPoster(detail.value.id)
+    detail.value = updated
+    ElMessage.success('海报生成成功')
+  } catch {
+    ElMessage.error('海报生成失败')
+  } finally {
+    generatePosterLoading.value = false
+  }
+}
+
 async function openHouseDetail(id: number) {
   houseDetail.value = null
   houseDetailVisible.value = true
@@ -507,13 +559,11 @@ onMounted(() => { fetchList(); fetchOptions() })
 .detail-header-actions { display: flex; gap: 8px; }
 .item-link { margin-right: 4px; }
 .section-title { margin: 20px 0 12px; }
-.price-unit-row :deep(.el-form-item__content) { flex-wrap: wrap; }
-.price-calc { color: #909399; font-size: 12px; margin-left: 8px; line-height: 32px; }
-
-.images-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+.price-calc-row { color: #909399; font-size: 12px; margin-top: -8px; }
+.price-calc-detail {
+  color: #909399;
+  font-size: 12px;
+  margin-top: 2px;
 }
 .pricing-wrap {
   display: flex;
@@ -524,11 +574,6 @@ onMounted(() => { fetchList(); fetchOptions() })
   display: flex;
   flex-direction: column;
   gap: 4px;
-}
-.price-calc-detail {
-  color: #909399;
-  font-size: 12px;
-  margin-top: 2px;
 }
 .pagination-wrap { display: flex; justify-content: flex-end; margin-top: 16px; }
 </style>

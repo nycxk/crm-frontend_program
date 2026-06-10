@@ -675,7 +675,7 @@ async function fetchList() {
 async function fetchOptions() {
   const [clientsRes, housesRes, channelsRes] = await Promise.all([
     getClientList({ page: 1, size: 200 }),
-    getHouseList({ page: 1, size: 200, houseStatus: 'idle' }),
+    getHouseList({ page: 1, size: 200 }),
     getChannelList({ page: 1, size: 50 }),
   ])
   clientList.value = clientsRes.records

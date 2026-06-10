@@ -33,6 +33,12 @@ request.interceptors.response.use(
     if (res.success && res.code === 200) {
       return res.data as any
     }
+    if (res.code === 2003) {
+      const err = new Error(res.message || '证件编号已存在')
+      ;(err as any).__apiCode = res.code
+      ;(err as any).__apiData = res.data
+      return Promise.reject(err)
+    }
     ElMessage.error(res.message || '请求失败')
     return Promise.reject(new Error(res.message || '请求失败'))
   },

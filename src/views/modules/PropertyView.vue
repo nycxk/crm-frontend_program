@@ -493,13 +493,22 @@ async function fetchDeptList() {
       operationDeptList.value = [userDept]
       projectDeptList.value = getProjectDeptsUnder(tree, userDept.id)
     } else {
-      operationDeptList.value = tree.filter((d) => d.departmentType === 'operation')
+      operationDeptList.value = flatTree(tree).filter((d) => d.departmentType === 'operation')
       projectDeptList.value = res.records
     }
   } else {
-    operationDeptList.value = tree.filter((d) => d.departmentType === 'operation')
+    operationDeptList.value = flatTree(tree).filter((d) => d.departmentType === 'operation')
     projectDeptList.value = res.records
   }
+}
+
+function flatTree(nodes: DepartmentRecord[]): DepartmentRecord[] {
+  const result: DepartmentRecord[] = []
+  nodes.forEach((n) => {
+    result.push(n)
+    if (n.children?.length) result.push(...flatTree(n.children))
+  })
+  return result
 }
 
 function handleSearch() {

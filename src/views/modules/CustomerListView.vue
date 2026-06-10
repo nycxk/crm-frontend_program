@@ -144,14 +144,38 @@
           </div>
         </el-form-item>
 
-        <template v-if="!isEdit">
-          <el-divider>来访信息</el-divider>
+        <el-form-item v-if="isEdit" label="合并用户">
+          <el-select v-model="form.mergeClientIds" multiple filterable placeholder="选择要合并到当前客户的其他客户" style="width:100%">
+            <el-option
+              v-for="c in mergeClientOptions"
+              :key="c.id"
+              :value="c.id"
+              :label="`${c.clientName}（${c.idType || '-'}: ${c.idNumber || '-'}）`"
+              :disabled="c.id === editId"
+            />
+          </el-select>
+          <div class="form-help">选择后将把所选客户的数据合并到当前客户，所选客户将被删除</div>
+        </el-form-item>
+      </el-form>
 
-          <el-form-item label="来访日期" prop="visitDate">
+      <el-form v-if="!isEdit" ref="visitFormRef" :model="visitForm" :rules="visitFormRules" label-width="100px" class="visit-form-section">
+        <el-divider>来访信息</el-divider>
+
+        <el-form-item label="来访日期" prop="visitDate">
             <el-date-picker v-model="visitForm.visitDate" type="date" placeholder="选择日期" value-format="YYYY-MM-DD" style="width:200px" />
           </el-form-item>
-          <el-form-item label="带看房源" prop="houseIds">
-            <el-select v-model="visitForm.houseIds" multiple filterable placeholder="选择房源" style="width:100%">
+          <el-form-item label="联系人" v-if="visitContactOptions.length">
+            <el-select v-model="visitForm.contactId" clearable filterable placeholder="选择本次来访联系人" style="width:100%">
+              <el-option
+                v-for="ct in visitContactOptions"
+                :key="ct.id"
+                :value="ct.id"
+                :label="ct.label"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="带看房源" prop="houseIds" required>
+            <el-select v-model="visitForm.houseIds" multiple filterable placeholder="选择房源（必选）" style="width:100%">
               <el-option v-for="h in houseList" :key="h.id" :value="h.id" :label="h.houseName" />
             </el-select>
           </el-form-item>
@@ -211,7 +235,6 @@
               </div>
             </div>
           </el-form-item>
-        </template>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
@@ -231,15 +254,23 @@
             <el-button
               type="primary"
               size="small"
-              :disabled="!detail || detail.createdBy !== userStore.userId"
+              :disabled="!detail"
               @click="detail && openEditDialog(detail.id)"
             >
               编辑
             </el-button>
             <el-button
+              type="success"
+              size="small"
+              :disabled="!detail || detail.clientStatus !== 'mine'"
+              @click="detail && openAssignDialog(detail)"
+            >
+              分配客户
+            </el-button>
+            <el-button
               type="warning"
               size="small"
-              :disabled="!detail || detail.createdBy !== userStore.userId || detail.clientStatus !== 'mine'"
+              :disabled="!detail || detail.clientStatus !== 'mine'"
               :loading="releaseLoading"
               @click="detail && handleReleaseToPool(detail)"
             >
@@ -454,11 +485,41 @@
         </el-table>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="assignDialogVisible" title="分配客户" width="480px" :close-on-click-modal="false">
+      <el-form :inline="true" :model="assignQuery" class="assign-search">
+        <el-form-item label="姓名搜索">
+          <el-input v-model="assignQuery.keyword" placeholder="输入用户姓名" clearable @keyup.enter="searchUsers" />
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" @click="searchUsers">搜索</el-button>
+        </el-form-item>
+      </el-form>
+      <el-table
+        :data="assignUserList"
+        v-loading="assignSearchLoading"
+        height="300"
+        stripe
+        highlight-current-row
+        @row-click="selectAssignUser"
+      >
+        <el-table-column prop="id" label="ID" width="60" />
+        <el-table-column prop="username" label="姓名" />
+        <el-table-column prop="departmentName" label="部门" />
+        <el-table-column prop="phone" label="手机号" />
+      </el-table>
+      <template #footer>
+        <el-button @click="assignDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="assignLoading" :disabled="!selectedAssignUserId" @click="handleAssign">
+          确定分配
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, computed, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import {
@@ -469,18 +530,19 @@ import {
   bindClientContacts,
   unbindClientContact,
   releaseToPublicPool,
+  assignClient,
+  mergeClients,
+  getClientContacts,
   type ClientRecord,
   type ClientDetail,
 } from '@/api/client'
+import { getStaffList, type StaffRecord } from '@/api/system'
 import { getDealList, type DealRecord } from '@/api/deal'
 import { getContactList, getContactDetail, type ContactRecord } from '@/api/contact'
 import { getHouseList, getHouseDetail, type HouseDetail } from '@/api/house'
 import { createVisit, getVisitDetail, type VisitRecord } from '@/api/visit'
 import { getChannelList, getAgencyList, type ChannelRecord, type AgencyRecord } from '@/api/channel'
 import { getParamByKey } from '@/api/system'
-import { useUserStore } from '@/stores/user'
-
-const userStore = useUserStore()
 
 const loading = ref(false)
 const dialogVisible = ref(false)
@@ -488,6 +550,7 @@ const submitLoading = ref(false)
 const isEdit = ref(false)
 const editId = ref(0)
 const formRef = ref<FormInstance>()
+const visitFormRef = ref<FormInstance>()
 const tableData = ref<ClientRecord[]>([])
 const total = ref(0)
 const contactList = ref<ContactRecord[]>([])
@@ -503,6 +566,14 @@ const bindDialogVisible = ref(false)
 const bindLoading = ref(false)
 const bindContactIds = ref<number[]>([])
 const releaseLoading = ref(false)
+
+const assignDialogVisible = ref(false)
+const assignLoading = ref(false)
+const assignSearchLoading = ref(false)
+const assignQuery = reactive({ keyword: '' })
+const assignUserList = ref<StaffRecord[]>([])
+const selectedAssignUserId = ref(0)
+const assignTargetDetail = ref<ClientDetail | null>(null)
 
 const contactDetailVisible = ref(false)
 const contactDetail = ref<ContactRecord | null>(null)
@@ -537,7 +608,12 @@ const form = reactive({
   idType: '',
   idNumber: '',
   contactIds: [] as number[],
+  mergeClientIds: [] as number[],
   newContacts: [] as { contactName: string; contactPhone: string; model?: string; agencyId?: number }[],
+})
+
+const mergeClientOptions = computed(() => {
+  return tableData.value.filter((c) => c.id !== editId.value)
 })
 
 const formRules: FormRules = {
@@ -565,8 +641,13 @@ const formRules: FormRules = {
   ],
 }
 
+const visitFormRules: FormRules = {
+  houseIds: [{ required: true, message: '请选择带看房源', trigger: 'change' }],
+}
+
 const visitForm = reactive({
   visitDate: '',
+  contactId: undefined as number | undefined,
   houseIds: [] as number[],
   channelId: undefined as number | undefined,
   channelInstanceId: undefined as number | undefined,
@@ -574,6 +655,36 @@ const visitForm = reactive({
   detailDescription: '',
   reqValues: {} as Record<string, string>,
 })
+
+const visitContactOptions = computed(() => {
+  const options: { id: number; label: string }[] = []
+  // 已有联系人
+  for (const cId of form.contactIds) {
+    const contact = contactList.value.find((c) => c.id === cId)
+    if (contact) {
+      options.push({ id: contact.id, label: `${contact.contactName}（${contact.contactPhone}）` })
+    }
+  }
+  // 新建联系人（使用负数临时 ID）
+  form.newContacts.forEach((nc, index) => {
+    const label = nc.contactName
+      ? `${nc.contactName}（${nc.contactPhone || '新建'}）`
+      : `新建联系人 ${index + 1}`
+    options.push({ id: -(index + 1), label })
+  })
+  return options
+})
+
+// 联系人变更时自动默认第一个联系人
+watch(
+  () => [form.contactIds.slice(), form.newContacts.length],
+  () => {
+    if (!visitForm.contactId && visitContactOptions.value.length > 0) {
+      visitForm.contactId = visitContactOptions.value[0].id
+    }
+  },
+  { deep: false },
+)
 
 const houseList = ref<{ id: number; houseName: string }[]>([])
 const channelList = ref<ChannelRecord[]>([])
@@ -619,9 +730,11 @@ function resetForm() {
   form.idType = ''
   form.idNumber = ''
   form.contactIds = []
+  form.mergeClientIds = []
   form.newContacts = []
   contactAgencyList.value = []
   visitForm.visitDate = ''
+  visitForm.contactId = undefined
   visitForm.houseIds = []
   visitForm.channelId = undefined
   visitForm.channelInstanceId = undefined
@@ -631,6 +744,7 @@ function resetForm() {
   visitSelectedChannel.value = null
   agencyList.value = []
   formRef.value?.resetFields()
+  visitFormRef.value?.resetFields()
 }
 
 async function fetchContactOptions() {
@@ -640,7 +754,7 @@ async function fetchContactOptions() {
 
 async function fetchVisitOptions() {
   const [housesRes, channelsRes] = await Promise.all([
-    getHouseList({ page: 1, size: 200, houseStatus: 'idle' }),
+    getHouseList({ page: 1, size: 200 }),
     getChannelList({ page: 1, size: 50 }),
   ])
   houseList.value = housesRes.records.map((h) => ({ id: h.id, houseName: h.houseName }))
@@ -676,7 +790,7 @@ async function onVisitChannelChange(channelId: number | undefined) {
   }
 }
 
-function buildVisitPayload(clientId: number) {
+function buildVisitPayload(clientId: number, resolvedContactId?: number) {
   const requirementsConfig: Record<string, string> = {}
   Object.entries(visitForm.reqValues).forEach(([key, val]) => {
     if (val) requirementsConfig[key] = val
@@ -684,6 +798,7 @@ function buildVisitPayload(clientId: number) {
   const payload: any = {
     visitDate: visitForm.visitDate || undefined,
     clientId,
+    contactId: resolvedContactId ?? visitForm.contactId ?? undefined,
     houseIds: visitForm.houseIds.length ? visitForm.houseIds : undefined,
     channelId: visitForm.channelId,
     detailDescription: visitForm.detailDescription || undefined,
@@ -693,6 +808,10 @@ function buildVisitPayload(clientId: number) {
     payload.channelInstanceId = visitForm.channelInstanceId
   } else if (visitForm.channelId) {
     payload.channelInstanceName = visitForm.channelInstanceName || undefined
+  }
+  // 排除负数临时 ID（新建联系人时，由外层 resolve 后传入）
+  if (payload.contactId && payload.contactId < 0) {
+    delete payload.contactId
   }
   return payload
 }
@@ -749,13 +868,64 @@ async function handleSubmit() {
     }
 
     if (isEdit.value) {
-      await updateClient(editId.value, payload)
-      ElMessage.success('修改成功')
-    } else {
-      const clientId = await createClient(payload)
-      if (visitForm.visitDate || visitForm.houseIds.length > 0 || visitForm.channelId || visitForm.detailDescription) {
+      try {
+        await updateClient(editId.value, payload)
+        ElMessage.success('修改成功')
+      } catch (err: any) {
+        if (err.__apiCode === 2003 && err.__apiData) {
+          const target = err.__apiData
+          submitLoading.value = false
+          const allSourceIds = [...new Set([...form.mergeClientIds, editId.value])]
+          ElMessageBox.confirm(
+            `证件编号已被客户「${target.clientName}」使用，是否将当前客户及所选合并客户合并到该客户？`,
+            '证件编号已存在',
+            { confirmButtonText: '确定合并', cancelButtonText: '取消', type: 'warning' },
+          ).then(async () => {
+            try {
+              await mergeClients(allSourceIds, target.id)
+              ElMessage.success('合并成功')
+              dialogVisible.value = false
+              fetchList()
+            } catch {
+              ElMessage.error('合并失败')
+            }
+          }).catch(() => {})
+          return
+        }
+        throw err
+      }
+
+      // Merge selected clients after successful update
+      if (form.mergeClientIds.length) {
         try {
-          await createVisit(buildVisitPayload(clientId))
+          await mergeClients(form.mergeClientIds, editId.value)
+          ElMessage.success('已合并所选客户')
+        } catch {
+          ElMessage.warning('客户信息已修改，但合并失败')
+          dialogVisible.value = false
+          fetchList()
+          return
+        }
+      }
+    } else {
+      const hasVisitData = visitForm.visitDate || visitForm.channelId || visitForm.detailDescription
+      if (hasVisitData) {
+        const visitValid = await visitFormRef.value?.validate().catch(() => false)
+        if (!visitValid) return
+      }
+      const hasHouses = visitForm.houseIds.length > 0
+      const clientId = await createClient(payload)
+      if (visitForm.visitDate || hasHouses || visitForm.channelId || visitForm.detailDescription) {
+        try {
+          let resolvedContactId: number | undefined
+          // 如果选择了新建联系人（临时负数 ID），创建客户后获取真实联系人 ID
+          if (visitForm.contactId && visitForm.contactId < 0) {
+            const clientContacts = await getClientContacts(clientId)
+            if (clientContacts.length > 0) {
+              resolvedContactId = clientContacts[0].id
+            }
+          }
+          await createVisit(buildVisitPayload(clientId, resolvedContactId))
         } catch {
           ElMessage.warning('客户已创建，但来访记录添加失败')
         }
@@ -868,6 +1038,44 @@ function handleReleaseToPool(row: ClientDetail) {
     .catch(() => {})
 }
 
+function openAssignDialog(d: ClientDetail) {
+  assignTargetDetail.value = d
+  assignQuery.keyword = ''
+  assignUserList.value = []
+  selectedAssignUserId.value = 0
+  assignDialogVisible.value = true
+}
+
+function searchUsers() {
+  assignSearchLoading.value = true
+  selectedAssignUserId.value = 0
+  getStaffList({ keyword: assignQuery.keyword || undefined, size: 50 })
+    .then((res) => { assignUserList.value = res.records })
+    .catch(() => { ElMessage.error('搜索用户失败') })
+    .finally(() => { assignSearchLoading.value = false })
+}
+
+function selectAssignUser(row: StaffRecord) {
+  selectedAssignUserId.value = row.id
+}
+
+async function handleAssign() {
+  const client = assignTargetDetail.value
+  if (!client || !selectedAssignUserId.value) return
+  assignLoading.value = true
+  try {
+    await assignClient(client.id, selectedAssignUserId.value)
+    ElMessage.success('分配成功')
+    assignDialogVisible.value = false
+    detailVisible.value = false
+    fetchList()
+  } catch {
+    ElMessage.error('分配失败')
+  } finally {
+    assignLoading.value = false
+  }
+}
+
 async function openHouseDetailPopup(id: number) {
   houseDetail.value = null
   houseDetailVisible.value = true
@@ -935,6 +1143,8 @@ onMounted(() => {
   gap: 8px;
 }
 
+.assign-search :deep(.el-form-item) { margin-bottom: 8px; }
+
 .contact-tag {
   margin-right: 4px;
   margin-bottom: 2px;
@@ -962,6 +1172,13 @@ onMounted(() => {
 }
 
 .new-contact-wrap {
+}
+
+.form-help {
+  color: #909399;
+  font-size: 12px;
+  line-height: 1.4;
+  margin-top: 4px;
 }
 
 .new-contact-row {

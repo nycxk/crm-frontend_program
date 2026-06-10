@@ -4,19 +4,17 @@ import type { PageResult } from './house'
 export interface HouseBriefVO {
   id: number
   houseName: string
+  departmentId: number
+  departmentName: string
+  operationDepartmentId: number
+  operationDepartmentName: string
+  houseStatus: string
+  houseStatusName: string
 }
 
 export interface UserBriefVO {
   id: number
   username: string
-}
-
-export interface InternalRentContactVO {
-  id: number
-  contactName: string
-  contactPhone: string
-  model: string | null
-  remark: string | null
 }
 
 export interface InternalRentRecord {
@@ -27,8 +25,9 @@ export interface InternalRentRecord {
   initiateUser: UserBriefVO | null
   initiateDate: string
   stopDate: string | null
-  contactIds: number[]
-  contacts: InternalRentContactVO[]
+  posterUrl: string | null
+  viewingUserIds: number[]
+  viewingUsers: UserBriefVO[]
   rentalArea: number
   referencePrice: number
   priceUnit: string | null
@@ -44,6 +43,7 @@ export interface InternalRentQuery {
   size?: number
   keyword?: string
   houseId?: number
+  status?: string
   initiateUserId?: number
   initiateDateFrom?: string
   initiateDateTo?: string
@@ -53,7 +53,7 @@ export interface InternalRentSaveParams {
   houseId: number
   initiateDate: string
   stopDate?: string | null
-  contactIds?: number[]
+  viewingUserIds?: number[]
   rentalArea: number
   referencePrice: number
   priceUnit?: string
@@ -67,7 +67,7 @@ export interface InternalRentUpdateParams {
   initiateDate?: string
   stopDate?: string | null
   clearStopDate?: boolean
-  contactIds?: number[]
+  viewingUserIds?: number[]
   rentalArea?: number
   referencePrice?: number
   priceUnit?: string
@@ -90,4 +90,7 @@ export function updateInternalRent(id: number, data: InternalRentUpdateParams): 
 }
 export function deleteInternalRent(id: number): Promise<null> {
   return del(`/api/internal-rents/${id}`)
+}
+export function generateInternalRentPoster(id: number): Promise<InternalRentRecord> {
+  return post(`/api/internal-rents/${id}/poster`)
 }

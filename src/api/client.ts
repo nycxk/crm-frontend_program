@@ -116,3 +116,12 @@ export function claimPublicClient(id: number): Promise<ClientRecord> {
 export function releaseToPublicPool(id: number): Promise<null> {
   return post(`/api/clients/${id}/public-pool`)
 }
+export function assignClient(id: number, userId: number): Promise<null> {
+  return post(`/api/clients/${id}/assign`, { userId })
+}
+export function checkIdNumber(clientIds: number[]): Promise<{ missingIdNumberClientIds: number[] }> {
+  return post('/api/clients/id-number/check', { clientIds })
+}
+export function mergeClients(sourceClientIds: number[], targetClientId: number): Promise<any> {
+  return post('/api/clients/merge', { sourceClientIds, targetClientId })
+}

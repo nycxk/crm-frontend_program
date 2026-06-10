@@ -107,9 +107,12 @@
         <el-row :gutter="16">
           <el-col :span="12">
             <el-form-item label="客户" prop="clientIds">
-              <el-select v-model="form.clientIds" multiple filterable clearable placeholder="至少选一个客户" style="width:100%">
-                <el-option v-for="c in clientList" :key="c.id" :value="c.id" :label="c.clientName" />
-              </el-select>
+              <div class="client-check-row">
+                <el-select v-model="form.clientIds" multiple filterable clearable placeholder="至少选一个客户" style="flex:1">
+                  <el-option v-for="c in clientList" :key="c.id" :value="c.id" :label="c.clientName" />
+                </el-select>
+                <el-button :disabled="!form.clientIds.length" :loading="checkIdLoading" @click="handleCheckIdNumber">检验客户</el-button>
+              </div>
             </el-form-item>
             <el-form-item label="渠道类型" prop="channelTypeId">
               <el-select v-model="form.channelTypeId" filterable clearable placeholder="选择渠道" style="width:100%" @change="onChannelChange">
@@ -130,8 +133,8 @@
           </el-col>
           <el-col :span="12">
             <el-form-item label="房源" prop="houseIds">
-              <el-select v-model="form.houseIds" multiple filterable clearable placeholder="至少选一个房源" style="width:100%" @change="onHouseIdsChange">
-                <el-option v-for="h in houseList" :key="h.id" :value="h.id" :label="h.houseName" />
+              <el-select v-model="form.houseIds" multiple filterable clearable placeholder="请选择内部招租房源" style="width:100%" @change="onHouseIdsChange">
+                <el-option v-for="h in rentalHouseList" :key="h.id" :value="h.id" :label="h.houseName" />
               </el-select>
             </el-form-item>
             <el-form-item v-if="selectedChannel?.instanceType === 'agency'" label="中介公司">
@@ -145,7 +148,7 @@
             <el-form-item label="起租日期" prop="contractStartDate">
               <el-date-picker v-model="form.contractStartDate" type="date" value-format="YYYY-MM-DD" style="width:100%" />
             </el-form-item>
-            <el-form-item label="退租日期">
+            <el-form-item label="退租日期" prop="contractEndDate" required>
               <el-date-picker v-model="form.contractEndDate" type="date" value-format="YYYY-MM-DD" style="width:100%" />
             </el-form-item>
           </el-col>
@@ -404,12 +407,51 @@
         >继续添加成交</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="incompleteClientVisible" title="待完善客户" width="550px" :close-on-click-modal="false">
+      <el-alert
+        type="warning"
+        :closable="false"
+        show-icon
+        style="margin-bottom:12px"
+      >
+        以下客户证件信息不完整，请在成交前完善。
+      </el-alert>
+      <el-table :data="incompleteClients" size="small" stripe>
+        <el-table-column prop="id" label="ID" width="60" />
+        <el-table-column prop="clientName" label="客户姓名" />
+        <el-table-column label="操作" width="80">
+          <template #default="{ row }">
+            <el-button link type="primary" size="small" @click="openClientEditPopup(row)">
+              修改
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-dialog>
+
+    <el-dialog v-model="clientEditVisible" title="修改客户证件信息" width="420px" :close-on-click-modal="false">
+      <el-form ref="clientEditFormRef" :model="clientEditForm" label-width="80px">
+        <el-form-item label="证件类型">
+          <el-select v-model="clientEditForm.idType" clearable filterable allow-create placeholder="选择或输入" style="width:100%">
+            <el-option v-for="t in idTypeOptions" :key="t" :value="t" :label="t" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="证件编号">
+          <el-input v-model="clientEditForm.idNumber" placeholder="请输入证件编号" maxlength="64" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="clientEditVisible = false">取消</el-button>
+        <el-button type="primary" :loading="clientEditLoading" @click="saveClientEdit">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import {
   getDealList, getDealDetail, createDeal, updateDeal, checkoutDeal,
@@ -419,8 +461,9 @@ import {
   getDealDraftList, createDealDraft, updateDealDraft, deleteDealDraft,
   type DealDraftRecord,
 } from '@/api/deal-draft'
-import { getClientList, getClientDetail, type ClientRecord, type ClientDetail } from '@/api/client'
+import { getClientList, getClientDetail, checkIdNumber, updateClient, mergeClients, type ClientRecord, type ClientDetail } from '@/api/client'
 import { getHouseList, getHouseDetail, type HouseRecord, type HouseDetail } from '@/api/house'
+import { getInternalRentList } from '@/api/internal-rent'
 import { getChannelList, getAgencyList, type ChannelRecord, type AgencyRecord } from '@/api/channel'
 import { useUserStore } from '@/stores/user'
 
@@ -438,6 +481,7 @@ const tableData = ref<DealRecord[]>([])
 const total = ref(0)
 const clientList = ref<ClientRecord[]>([])
 const houseList = ref<HouseRecord[]>([])
+const rentalHouseList = ref<HouseRecord[]>([])
 const channelList = ref<ChannelRecord[]>([])
 const agencyList = ref<AgencyRecord[]>([])
 const selectedChannel = ref<ChannelRecord | null>(null)
@@ -453,6 +497,14 @@ const checkoutDealRow = ref<DealRecord | null>(null)
 const clientDetailVisible = ref(false)
 const clientDetail = ref<ClientDetail | null>(null)
 const clientDeals = ref<DealRecord[]>([])
+const checkIdLoading = ref(false)
+const incompleteClientVisible = ref(false)
+const incompleteClients = ref<ClientRecord[]>([])
+const clientEditVisible = ref(false)
+const clientEditLoading = ref(false)
+const clientEditFormRef = ref<FormInstance>()
+const clientEditForm = reactive({ idType: '', idNumber: '', clientId: 0 })
+const idTypeOptions = ['身份证', '护照', '港澳通行证', '台胞证', '营业执照']
 const houseDetailVisible = ref(false)
 const houseDetail = ref<HouseDetail | null>(null)
 
@@ -499,6 +551,7 @@ const formRules: FormRules = {
   channelTypeId: [{ required: true, message: '请选择渠道类型', trigger: 'change' }],
   contractSignDate: [{ required: true, message: '请选择签订日期', trigger: 'blur' }],
   contractStartDate: [{ required: true, message: '请选择起租日期', trigger: 'blur' }],
+  contractEndDate: [{ required: true, message: '请选择退租日期', trigger: 'blur' }],
 }
 
 function formatTime(s: string) { return s ? new Date(s).toLocaleString('zh-CN') : '-' }
@@ -555,14 +608,17 @@ async function fetchList() {
 }
 
 async function fetchOptions() {
-  const [cl, hl, chl] = await Promise.all([
+  const [cl, hl, chl, rentalsRes] = await Promise.all([
     getClientList({ page: 1, size: 200 }),
     getHouseList({ page: 1, size: 200, houseStatus: 'idle' }),
     getChannelList({ page: 1, size: 50 }),
+    getInternalRentList({ page: 1, size: 200, status: 'active' }),
   ])
   clientList.value = cl.records
   houseList.value = hl.records
   channelList.value = chl.records
+  const rentalHouseIds = new Set(rentalsRes.records.map((r) => r.houseId))
+  rentalHouseList.value = hl.records.filter((h) => rentalHouseIds.has(h.id))
 }
 
 function handleSearch() { query.page = 1; fetchList() }
@@ -611,7 +667,7 @@ async function onChannelChange(id: number | undefined) {
 function onHouseIdsChange(ids: number[]) {
   if (!ids.length) return
   const total = ids.reduce((sum, id) => {
-    const h = houseList.value.find((item) => item.id === id)
+    const h = rentalHouseList.value.find((item) => item.id === id)
     return sum + (h?.rentableArea || 0)
   }, 0)
   if (total > 0) {
@@ -749,6 +805,80 @@ function startDealFromHouse() {
   dialogVisible.value = true
 }
 
+async function handleCheckIdNumber() {
+  if (!form.clientIds.length) return
+  checkIdLoading.value = true
+  try {
+    const res = await checkIdNumber(form.clientIds)
+    if (!res.missingIdNumberClientIds.length) {
+      ElMessage.success('所选客户证件信息完整')
+      return
+    }
+    incompleteClients.value = clientList.value.filter((c) => res.missingIdNumberClientIds.includes(c.id))
+    incompleteClientVisible.value = true
+  } catch {
+    ElMessage.error('检验失败')
+  } finally {
+    checkIdLoading.value = false
+  }
+}
+
+function openClientEditPopup(row: ClientRecord) {
+  clientEditForm.clientId = row.id
+  clientEditForm.idType = row.idType || ''
+  clientEditForm.idNumber = row.idNumber || ''
+  clientEditVisible.value = true
+}
+
+async function saveClientEdit() {
+  clientEditLoading.value = true
+  try {
+    await updateClient(clientEditForm.clientId, {
+      idType: clientEditForm.idType || undefined,
+      idNumber: clientEditForm.idNumber || undefined,
+    })
+    ElMessage.success('修改成功')
+    clientEditVisible.value = false
+    const idx = incompleteClients.value.findIndex((c) => c.id === clientEditForm.clientId)
+    if (idx !== -1) {
+      incompleteClients.value.splice(idx, 1)
+      if (!incompleteClients.value.length) {
+        incompleteClientVisible.value = false
+        ElMessage.success('所有客户证件信息已完善')
+      }
+    }
+  } catch (err: any) {
+    if (err.__apiCode === 2003 && err.__apiData) {
+      const target = err.__apiData
+      clientEditLoading.value = false
+      ElMessageBox.confirm(
+        `证件编号已被客户「${target.clientName}」使用，是否将当前客户合并到该客户？`,
+        '证件编号已存在',
+        { confirmButtonText: '确定合并', cancelButtonText: '取消', type: 'warning' },
+      ).then(async () => {
+        try {
+          await mergeClients([clientEditForm.clientId], target.id)
+          ElMessage.success('合并成功')
+          clientEditVisible.value = false
+          incompleteClientVisible.value = false
+          incompleteClients.value = []
+          if (detailVisible.value) {
+            detailVisible.value = false
+          }
+          fetchList()
+          fetchOptions()
+        } catch {
+          ElMessage.error('合并失败')
+        }
+      }).catch(() => {})
+      return
+    }
+    ElMessage.error('修改失败')
+  } finally {
+    clientEditLoading.value = false
+  }
+}
+
 async function fetchDraftList() {
   draftLoading.value = true
   try {
@@ -811,4 +941,5 @@ onMounted(() => { fetchList(); fetchOptions() })
 .item-link { margin-right: 4px; }
 .section-title { margin: 20px 0 12px; }
 .pagination-wrap { display: flex; justify-content: flex-end; margin-top: 16px; }
+.client-check-row { display: flex; gap: 8px; align-items: center; width: 100%; }
 </style>

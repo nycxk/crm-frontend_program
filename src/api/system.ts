@@ -53,7 +53,7 @@ export interface StaffUpdateParams {
 export interface DepartmentRecord {
   id: number
   departmentName: string
-  departmentType: 'operation' | 'project'
+  departmentType: 'marketing_center' | 'operation' | 'project'
   departmentTypeName: string
   parentId: number
   parentName: string | null

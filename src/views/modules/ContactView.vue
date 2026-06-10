@@ -102,7 +102,7 @@ import {
   updateContact,
   type ContactRecord,
 } from '@/api/contact'
-import { getChannelList, getAgencyList, type AgencyRecord } from '@/api/channel'
+import { getChannelList, getAgencyList } from '@/api/channel'
 
 const loading = ref(false)
 const dialogVisible = ref(false)
