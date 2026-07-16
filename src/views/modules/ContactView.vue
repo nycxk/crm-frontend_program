@@ -19,11 +19,11 @@
       <template #header>
         <div class="card-header">
           <span>联系人列表</span>
-          <el-button type="primary" @click="openCreateDialog">新增联系人</el-button>
+          <el-button v-if="userStore.canWrite" type="primary" @click="openCreateDialog">新增联系人</el-button>
         </div>
       </template>
 
-      <el-table :data="tableData" v-loading="loading" stripe highlight-current-row @row-click="openEditDialog">
+      <el-table :data="tableData" v-loading="loading" stripe highlight-current-row @row-click="onRowClick">
         <el-table-column prop="id" label="ID" width="70" />
         <el-table-column prop="contactName" label="姓名" min-width="120" />
         <el-table-column prop="contactPhone" label="联系电话" width="140" />
@@ -103,7 +103,9 @@ import {
   type ContactRecord,
 } from '@/api/contact'
 import { getChannelList, getAgencyList } from '@/api/channel'
+import { useUserStore } from '@/stores/user'
 
+const userStore = useUserStore()
 const loading = ref(false)
 const dialogVisible = ref(false)
 const submitLoading = ref(false)
@@ -232,6 +234,11 @@ async function fetchAgencyList() {
       }
     }
   } catch { /* ignore */ }
+}
+
+async function onRowClick(row: ContactRecord) {
+  if (!userStore.canWrite) return
+  await openEditDialog(row)
 }
 
 async function openEditDialog(row: ContactRecord) {

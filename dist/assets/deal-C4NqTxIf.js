@@ -1,1 +1,0 @@
-import{ab as t,am as s,al as n}from"./index-RFEoiuxE.js";function r(a){return t("/api/deals",a)}function i(a){return t(`/api/deals/${a}`)}function l(a){return n("/api/deals",a)}function c(a,e){return s(`/api/deals/${a}`,e)}function o(a,e){return n(`/api/deals/${a}/checkout`,e)}export{l as a,r as b,o as c,i as g,c as u};

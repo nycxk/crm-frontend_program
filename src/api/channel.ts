@@ -4,6 +4,7 @@ export interface ChannelRecord {
   id: number
   typeName: string
   instanceType: 'agency' | 'none'
+  instanceModel?: 'agency' | 'client' | 'user' | 'contact' | 'none'
   hasAgency: boolean
   agencyCount: number
   createTime: string

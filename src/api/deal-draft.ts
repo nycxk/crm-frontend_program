@@ -14,6 +14,7 @@ export interface DealDraftRecord {
   channelInstanceName: string | null
   rentalArea: number | null
   contractTotalAmount: number | null
+  unitPrice: number | null
   contractSignDate: string | null
   contractStartDate: string | null
   contractEndDate: string | null
@@ -44,6 +45,7 @@ export interface DealDraftSaveParams {
   channelInstanceModel?: string
   rentalArea?: number
   contractTotalAmount?: number
+  unitPrice?: number
   contractSignDate?: string
   contractStartDate?: string
   contractEndDate?: string

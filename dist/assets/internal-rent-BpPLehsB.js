@@ -1,1 +1,0 @@
-import{ab as t,am as a,al as e}from"./index-RFEoiuxE.js";function s(n){return t("/api/internal-rents",n)}function u(n){return t(`/api/internal-rents/${n}`)}function l(n){return e("/api/internal-rents",n)}function o(n,r){return a(`/api/internal-rents/${n}`,r)}function p(n){return e(`/api/internal-rents/${n}/poster`)}export{u as a,s as b,l as c,p as g,o as u};

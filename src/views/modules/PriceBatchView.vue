@@ -1,12 +1,12 @@
 <template>
   <div class="price-batch-page">
-    <el-card class="action-card">
+    <el-card v-if="userStore.canWrite" class="action-card">
       <el-row :gutter="16" align="middle">
         <el-col :span="16">
           <div class="action-btns">
             <el-select v-model="uploadPriceType" style="width:120px">
-              <el-option value="guide" label="指导价" />
-              <el-option value="assessed" label="评估价" />
+              <el-option value="guide" label="报价" />
+              <el-option v-if="userStore.canManageAssessedPrice" value="assessed" label="评估价" />
             </el-select>
             <el-upload
               :show-file-list="false"
@@ -20,8 +20,8 @@
               <el-button>下载模板<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item command="guide">指导价模板</el-dropdown-item>
-                  <el-dropdown-item command="assessed">评估价模板</el-dropdown-item>
+                  <el-dropdown-item command="guide">报价模板</el-dropdown-item>
+                  <el-dropdown-item v-if="userStore.canManageAssessedPrice" command="assessed">评估价模板</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -37,8 +37,8 @@
         </el-form-item>
         <el-form-item label="类型">
           <el-select v-model="query.priceType" clearable placeholder="全部" style="width:120px" @change="handleSearch">
-            <el-option value="guide" label="指导价" />
-            <el-option value="assessed" label="评估价" />
+            <el-option value="guide" label="报价" />
+            <el-option v-if="userStore.canViewAssessedPrice" value="assessed" label="评估价" />
           </el-select>
         </el-form-item>
         <el-form-item label="状态">
@@ -101,7 +101,7 @@
       <template #header>
         <div class="detail-header">
           <span>批次详情</span>
-          <div class="detail-header-actions">
+          <div v-if="userStore.canWrite && (!detail || detail.priceType !== 'assessed' || userStore.canManageAssessedPrice)" class="detail-header-actions">
             <el-button
               type="danger"
               size="small"
@@ -131,13 +131,13 @@
         <h4 class="section-title">房源调价明细</h4>
         <el-table v-if="detail.houseSnapshot?.length" :data="detail.houseSnapshot" size="small" stripe>
           <el-table-column prop="houseId" label="房源ID" width="100" />
-          <el-table-column label="指导价版本" width="120">
+          <el-table-column label="报价版本" width="120">
             <template #default="{ row: s }">
-              <span v-if="detail.priceType === 'guide'">指导价V{{ s.guideVersion }}</span>
+              <span v-if="detail.priceType === 'guide'">报价V{{ s.guideVersion }}</span>
               <span v-else>V{{ s.guideVersion || '-' }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="评估价版本" width="120">
+          <el-table-column v-if="userStore.canViewAssessedPrice" label="评估价版本" width="120">
             <template #default="{ row: s }">
               <span v-if="detail.priceType === 'assessed'">评估价V{{ s.assessedVersion }}</span>
               <span v-else>V{{ s.assessedVersion || '-' }}</span>
@@ -163,6 +163,9 @@ import {
   rollbackPriceBatch,
   type PriceBatchRecord,
 } from '@/api/price-batch'
+import { useUserStore } from '@/stores/user'
+
+const userStore = useUserStore()
 
 const loading = ref(false)
 const uploadLoading = ref(false)

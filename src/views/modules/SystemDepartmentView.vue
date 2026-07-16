@@ -35,7 +35,7 @@
           <template #header>
             <div class="card-header">
               <span>部门列表</span>
-              <div class="header-actions">
+              <div v-if="userStore.canWrite" class="header-actions">
                 <el-button type="primary" size="small" @click="openCreateDialog('operation')">
                   新增经营部
                 </el-button>
@@ -57,7 +57,7 @@
             </el-form-item>
             <el-form-item label="类型">
               <el-select v-model="query.departmentType" clearable placeholder="全部" style="width: 110px" @change="handleSearch">
-                <el-option value="marketing_center" label="营销中心" />
+                <el-option value="marketing" label="营销中心" />
                 <el-option value="operation" label="经营部" />
                 <el-option value="project" label="项目部" />
               </el-select>
@@ -68,7 +68,7 @@
             </el-form-item>
           </el-form>
 
-          <el-table :data="tableData" v-loading="loading" stripe highlight-current-row @row-click="openEditDialog">
+          <el-table :data="tableData" v-loading="loading" stripe highlight-current-row @row-click="onRowClick">
             <el-table-column prop="id" label="ID" width="70" />
             <el-table-column prop="departmentName" label="部门名称" min-width="160" />
             <el-table-column label="类型" width="100" align="center">
@@ -117,8 +117,8 @@
         <el-form-item label="部门名称" prop="departmentName">
           <el-input v-model="form.departmentName" placeholder="请输入部门名称" maxlength="32" />
         </el-form-item>
-        <el-form-item v-if="formType !== 'marketing_center'" label="上级部门" prop="parentId">
-          <el-input v-if="formType === 'operation' && !isEdit" :model-value="parentDeptName" disabled />
+        <el-form-item v-if="formType !== 'marketing'" label="上级部门" :prop="formType === 'operation' && !isEdit ? undefined : 'parentId'">
+          <el-input v-if="formType === 'operation' && !isEdit" value="营销中心" disabled />
           <el-select v-else v-model="form.parentId" placeholder="请选择上级经营部" style="width: 100%">
             <el-option
               v-for="dept in parentDeptOptions"
@@ -149,6 +149,9 @@ import {
   updateDepartment,
   type DepartmentRecord,
 } from '@/api/system'
+import { useUserStore } from '@/stores/user'
+
+const userStore = useUserStore()
 
 const loading = ref(false)
 const treeLoading = ref(false)
@@ -173,14 +176,6 @@ const formTypeName = computed(() => {
   return '项目部'
 })
 
-const parentDeptName = computed(() => {
-  if (formType.value === 'operation' && marketingCenters.value.length) {
-    return marketingCenters.value[0].departmentName
-  }
-  return ''
-})
-
-
 const query = reactive({
   keyword: '',
   departmentType: '' as string,
@@ -194,7 +189,7 @@ const form = reactive({
   parentId: undefined as number | undefined,
 })
 
-const formType = ref<'operation' | 'project' | 'marketing_center'>('operation')
+const formType = ref<'operation' | 'project' | 'marketing'>('operation')
 
 const dialogTitle = ref('新增部门')
 
@@ -212,7 +207,7 @@ function formatTime(dateStr: string) {
 }
 
 function deptTypeTag(type: string) {
-  if (type === 'marketing_center') return 'danger'
+  if (type === 'marketing') return 'danger'
   if (type === 'operation') return 'primary'
   if (type === 'project') return 'success'
   return ''
@@ -249,7 +244,7 @@ async function fetchTree() {
   try {
     treeData.value = await getDepartmentTree()
     const flatDepts = flattenTree(treeData.value)
-    marketingCenters.value = flatDepts.filter((d) => d.departmentType === 'marketing_center')
+    marketingCenters.value = flatDepts.filter((d) => d.departmentType === 'marketing')
     operationDepts.value = flatDepts.filter((d) => d.departmentType === 'operation')
   } finally {
     treeLoading.value = false
@@ -284,26 +279,31 @@ function resetForm() {
   formRef.value?.resetFields()
 }
 
-function openCreateDialog(type: 'operation' | 'project' | 'marketing_center') {
+function openCreateDialog(type: 'operation' | 'project' | 'marketing') {
   isEdit.value = false
   editId.value = 0
   formType.value = type
   resetForm()
-  if (type === 'operation' && marketingCenters.value.length) {
-    form.parentId = marketingCenters.value[0].id
+  if (type === 'operation') {
+    form.parentId = 1 // 营销中心固定 ID
   }
   dialogTitle.value = type === 'operation' ? '新增经营部' : '新增项目部'
   dialogVisible.value = true
 }
 
+async function onRowClick(row: DepartmentRecord) {
+  if (!userStore.canWrite) return
+  await openEditDialog(row)
+}
+
 async function openEditDialog(row: DepartmentRecord) {
-  if (row.departmentType === 'marketing_center') { ElMessage.info('营销中心不支持编辑'); return }
+  if (row.departmentType === 'marketing') { ElMessage.info('营销中心不支持编辑'); return }
   isEdit.value = true
   editId.value = row.id
   resetForm()
   try {
     const detail = await getDepartmentDetail(row.id)
-    formType.value = detail.departmentType as 'operation' | 'project' | 'marketing_center'
+    formType.value = detail.departmentType as 'operation' | 'project' | 'marketing'
     dialogTitle.value = `编辑${detail.departmentTypeName}`
     form.departmentName = detail.departmentName
     form.parentId = detail.parentId || undefined
@@ -323,7 +323,7 @@ async function handleSubmit() {
       departmentName: form.departmentName,
       departmentType: formType.value,
     }
-    if (formType.value !== 'marketing_center') {
+    if (formType.value !== 'marketing') {
       payload.parentId = form.parentId
     }
 

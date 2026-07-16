@@ -45,8 +45,8 @@
           </template>
         </el-table-column>
         <el-table-column prop="visitCount" label="来访次数" width="90" align="center" />
-        <el-table-column label="创建时间" width="180">
-          <template #default="{ row }">{{ formatTime(row.createTime) }}</template>
+        <el-table-column label="进入公海时间" width="180">
+          <template #default="{ row }">{{ formatTime(row.publicPoolTime) }}</template>
         </el-table-column>
       </el-table>
 
@@ -65,33 +65,104 @@
 
     <el-dialog
       v-model="detailVisible"
-      width="700px"
+      width="900px"
       :close-on-click-modal="false"
     >
       <template #header>
         <div class="detail-header">
           <span>公海客户详情</span>
-          <div class="detail-header-actions">
+          <div v-if="userStore.canWrite" class="detail-header-actions">
             <el-button type="primary" size="small" :loading="claimLoading" @click="handleClaimFromDetail">认领</el-button>
           </div>
         </div>
       </template>
-      <template v-if="selectedRow">
+      <div v-loading="detailLoading">
+        <template v-if="clientDetail">
+          <el-descriptions :column="2" border>
+            <el-descriptions-item label="客户姓名">{{ clientDetail.clientName }}</el-descriptions-item>
+            <el-descriptions-item label="证件信息">
+              {{ clientDetail.idType ? `${clientDetail.idType}：${clientDetail.idNumber}` : '-' }}
+            </el-descriptions-item>
+            <el-descriptions-item label="来访次数">{{ clientDetail.visitCount }}</el-descriptions-item>
+            <el-descriptions-item label="进入公海时间">{{ formatTime(clientDetail.publicPoolTime) }}</el-descriptions-item>
+            <el-descriptions-item label="创建时间">{{ formatTime(clientDetail.createTime) }}</el-descriptions-item>
+          </el-descriptions>
+
+          <h4 class="section-title">关联联系人</h4>
+          <el-table v-if="clientDetail.contacts?.length" :data="clientDetail.contacts" size="small" stripe>
+            <el-table-column prop="contactName" label="姓名" />
+            <el-table-column prop="contactPhone" label="电话" />
+            <el-table-column prop="model" label="从属类型" />
+            <el-table-column label="关联中介">
+              <template #default="{ row: c }">{{ c.agencyName || '-' }}</template>
+            </el-table-column>
+          </el-table>
+          <el-empty v-else description="暂无联系人" :image-size="60" />
+
+          <h4 class="section-title">来访记录</h4>
+          <el-table
+            v-if="clientDetail.visits?.length"
+            :data="clientDetail.visits"
+            size="small"
+            stripe
+            highlight-current-row
+            @row-click="(v: ClientVisit) => openVisitDetailPopup(v.id)"
+          >
+            <el-table-column prop="visitDate" label="来访日期" width="120" />
+            <el-table-column label="房产" min-width="140">
+              <template #default="{ row: v }">
+                <span v-for="h in v.houses" :key="h.id" class="house-name">{{ h.houseName }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="渠道" min-width="160">
+              <template #default="{ row: v }">
+                {{ v.channelTypeName || '-' }}
+                <template v-if="v.channelInstanceName"> / {{ v.channelInstanceName }}</template>
+              </template>
+            </el-table-column>
+            <el-table-column prop="detailDescription" label="接访概要" min-width="140" show-overflow-tooltip />
+            <el-table-column label="需求" min-width="140">
+              <template #default="{ row: v }">
+                <template v-if="v.requirementsConfig">
+                  <el-tag
+                    v-for="(val, key) in v.requirementsConfig"
+                    :key="key"
+                    size="small"
+                    class="contact-tag"
+                  >
+                    {{ key }}：{{ formatReqValue(val) }}
+                  </el-tag>
+                </template>
+              </template>
+            </el-table-column>
+          </el-table>
+          <el-empty v-else description="暂无来访记录" :image-size="60" />
+        </template>
+      </div>
+    </el-dialog>
+
+    <el-dialog v-model="visitDetailVisible" title="来访详情" width="600px" :close-on-click-modal="false">
+      <template v-if="visitDetail">
         <el-descriptions :column="2" border>
-          <el-descriptions-item label="客户姓名">{{ selectedRow.clientName }}</el-descriptions-item>
-          <el-descriptions-item label="证件信息">
-            {{ selectedRow.idType ? `${selectedRow.idType}：${selectedRow.idNumber}` : '-' }}
+          <el-descriptions-item label="来访日期">{{ visitDetail.visitDate }}</el-descriptions-item>
+          <el-descriptions-item label="客户">{{ visitDetail.clientName }}</el-descriptions-item>
+          <el-descriptions-item label="渠道">{{ visitDetail.channelTypeName || '-' }}
+            <template v-if="visitDetail.channelInstanceName"> / {{ visitDetail.channelInstanceName }}</template>
           </el-descriptions-item>
-          <el-descriptions-item label="来访次数">{{ selectedRow.visitCount }}</el-descriptions-item>
-          <el-descriptions-item label="创建时间">{{ formatTime(selectedRow.createTime) }}</el-descriptions-item>
+          <el-descriptions-item label="接访概要" :span="2">{{ visitDetail.detailDescription || '-' }}</el-descriptions-item>
         </el-descriptions>
 
-        <h4 class="section-title">关联联系人</h4>
-        <el-table v-if="selectedRow.contacts?.length" :data="selectedRow.contacts" size="small" stripe>
-          <el-table-column prop="contactName" label="姓名" />
-          <el-table-column prop="contactPhone" label="电话" />
+        <h4 class="section-title">带看房源</h4>
+        <el-table v-if="visitDetail.houses?.length" :data="visitDetail.houses" size="small" stripe>
+          <el-table-column prop="houseName" label="房源名称" />
         </el-table>
-        <el-empty v-else description="暂无联系人" :image-size="60" />
+        <el-empty v-else description="无带看房源" :image-size="60" />
+
+        <h4 v-if="visitDetail.requirementsConfig && Object.keys(visitDetail.requirementsConfig).length" class="section-title">需求清单</h4>
+        <el-table v-if="visitDetail.requirementsConfig && Object.keys(visitDetail.requirementsConfig).length" :data="visitReqTableData" size="small" stripe>
+          <el-table-column prop="key" label="需求项" />
+          <el-table-column prop="value" label="内容" />
+        </el-table>
       </template>
     </el-dialog>
 
@@ -112,19 +183,41 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getPublicPoolList, claimPublicClient, type ClientRecord } from '@/api/client'
+import {
+  getPublicPoolList,
+  claimPublicClient,
+  getClientDetail,
+  type ClientRecord,
+  type ClientDetail,
+  type ClientVisit,
+} from '@/api/client'
 import { getContactDetail, type ContactRecord } from '@/api/contact'
+import { getVisitDetail, type VisitRecord } from '@/api/visit'
+import { useUserStore } from '@/stores/user'
+
+const userStore = useUserStore()
 
 const loading = ref(false)
 const claimLoading = ref(false)
+const detailLoading = ref(false)
 const detailVisible = ref(false)
-const selectedRow = ref<ClientRecord | null>(null)
+const clientDetail = ref<ClientDetail | null>(null)
 const contactDetailVisible = ref(false)
 const contactDetail = ref<ContactRecord | null>(null)
+const visitDetailVisible = ref(false)
+const visitDetail = ref<VisitRecord | null>(null)
 const tableData = ref<ClientRecord[]>([])
 const total = ref(0)
+
+const visitReqTableData = computed(() => {
+  if (!visitDetail.value?.requirementsConfig) return []
+  return Object.entries(visitDetail.value.requirementsConfig).map(([key, value]) => ({
+    key,
+    value: formatReqValue(value),
+  }))
+})
 
 const query = reactive({
   keyword: '',
@@ -132,7 +225,11 @@ const query = reactive({
   size: 10,
 })
 
-function formatTime(s: string) { return s ? new Date(s).toLocaleString('zh-CN') : '-' }
+function formatTime(s?: string | null) { return s ? new Date(s).toLocaleString('zh-CN') : '-' }
+
+function formatReqValue(val: string | string[]) {
+  return Array.isArray(val) ? val.join('、') : val
+}
 
 async function fetchList() {
   loading.value = true
@@ -152,22 +249,31 @@ function handleReset() {
   fetchList()
 }
 
-function openDetailDialog(row: ClientRecord) {
-  selectedRow.value = row
+async function openDetailDialog(row: ClientRecord) {
+  clientDetail.value = null
   detailVisible.value = true
+  detailLoading.value = true
+  try {
+    clientDetail.value = await getClientDetail(row.id)
+  } catch {
+    ElMessage.error('获取客户详情失败')
+    detailVisible.value = false
+  } finally {
+    detailLoading.value = false
+  }
 }
 
 function handleClaimFromDetail() {
-  if (!selectedRow.value) return
+  if (!clientDetail.value) return
   ElMessageBox.confirm(
-    `确认认领客户「${selectedRow.value.clientName}」吗？认领后该客户将变为您的客户。`,
+    `确认认领客户「${clientDetail.value.clientName}」吗？认领后该客户将变为您的客户。`,
     '认领确认',
     { confirmButtonText: '确认认领', cancelButtonText: '取消', type: 'warning' },
   )
     .then(async () => {
       claimLoading.value = true
       try {
-        await claimPublicClient(selectedRow.value!.id)
+        await claimPublicClient(clientDetail.value!.id)
         ElMessage.success('认领成功')
         detailVisible.value = false
         fetchList()
@@ -187,6 +293,17 @@ async function openContactDetailPopup(id: number) {
   }
 }
 
+async function openVisitDetailPopup(id: number) {
+  visitDetail.value = null
+  visitDetailVisible.value = true
+  try {
+    visitDetail.value = await getVisitDetail(id)
+  } catch {
+    ElMessage.error('获取来访详情失败')
+    visitDetailVisible.value = false
+  }
+}
+
 onMounted(() => { fetchList() })
 </script>
 
@@ -200,5 +317,5 @@ onMounted(() => { fetchList() })
 .detail-header { display: flex; justify-content: space-between; align-items: center; width: 100%; }
 .detail-header-actions { display: flex; gap: 8px; }
 .section-title { margin: 20px 0 12px; }
-.contact-tag { margin-right: 4px; margin-bottom: 2px; }
+.house-name { margin-right: 8px; }
 </style>

@@ -28,7 +28,7 @@
       <template #header>
         <div class="card-header">
           <span>人员列表</span>
-          <el-button type="primary" @click="openCreateDialog">新增人员</el-button>
+          <el-button v-if="userStore.canWrite" type="primary" @click="openCreateDialog">新增人员</el-button>
         </div>
       </template>
 
@@ -90,7 +90,7 @@
       <template #header>
         <div class="detail-header">
           <span>人员详情</span>
-          <div class="detail-header-actions">
+          <div v-if="userStore.canWrite" class="detail-header-actions">
             <el-button type="primary" size="small" @click="detailRow && openEditDialog(detailRow.id)">编辑</el-button>
             <el-button type="warning" size="small" @click="detailRow && openPhoneDialog(detailRow)">修改手机号</el-button>
             <el-button type="success" size="small" @click="detailRow && handleResetPwd(detailRow)">重置密码</el-button>
@@ -148,15 +148,20 @@
         <el-form-item label="邮箱" prop="email">
           <el-input v-model="form.email" placeholder="请输入邮箱" />
         </el-form-item>
-        <el-form-item label="部门">
-          <el-select v-model="form.departmentId" clearable placeholder="请选择部门">
-            <el-option
-              v-for="dept in departmentList"
-              :key="dept.id"
-              :value="dept.id"
-              :label="dept.departmentName"
-            />
-          </el-select>
+        <el-form-item label="部门" prop="departmentIds">
+          <el-tree-select
+            v-model="form.departmentIds"
+            :data="departmentTree"
+            multiple
+            clearable
+            filterable
+            check-strictly
+            collapse-tags
+            collapse-tags-tooltip
+            placeholder="请选择部门（可多选，须为同一类型）"
+            :props="{ label: 'departmentName', value: 'id', children: 'children' }"
+            style="width: 100%"
+          />
         </el-form-item>
         <el-form-item label="角色" prop="roleIds">
           <el-select v-model="form.roleIds" multiple placeholder="至少选择一个角色">
@@ -206,7 +211,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import {
@@ -218,11 +223,16 @@ import {
   resetStaffPassword,
   disableStaff,
   getRoleList,
-  getDepartmentList,
+  getDepartmentTree,
   type StaffRecord,
   type RoleRecord,
   type DepartmentRecord,
 } from '@/api/system'
+import { useUserStore } from '@/stores/user'
+
+const userStore = useUserStore()
+
+type DeptTreeNode = DepartmentRecord
 
 const loading = ref(false)
 const submitLoading = ref(false)
@@ -240,7 +250,7 @@ const editingStaffRow = ref<StaffRecord | null>(null)
 const tableData = ref<StaffRecord[]>([])
 const total = ref(0)
 const roleList = ref<RoleRecord[]>([])
-const departmentList = ref<DepartmentRecord[]>([])
+const departmentTree = ref<DeptTreeNode[]>([])
 
 const query = reactive({
   keyword: '',
@@ -253,7 +263,7 @@ const form = reactive({
   username: '',
   phone: '',
   email: '',
-  departmentId: undefined as number | undefined,
+  departmentIds: [] as number[],
   roleIds: [] as number[],
   statusBool: 1 as number,
 })
@@ -272,15 +282,21 @@ const validatePhone = (_rule: any, value: string, callback: (error?: Error) => v
   }
 }
 
-const formRules: FormRules = {
-  username: [
-    { required: true, message: '请输入用户名', trigger: 'blur' },
-    { min: 2, max: 32, message: '用户名长度 2-32 个字符', trigger: 'blur' },
-  ],
-  phone: [{ required: true, validator: validatePhone, trigger: 'blur' }],
-  email: [{ type: 'email', message: '请输入正确的邮箱格式', trigger: 'blur' }],
-  roleIds: [{ required: true, message: '至少选择一个角色', trigger: 'change' }],
-}
+const formRules = computed<FormRules>(() => {
+  const rules: FormRules = {
+    username: [
+      { required: true, message: '请输入用户名', trigger: 'blur' },
+      { min: 2, max: 32, message: '用户名长度 2-32 个字符', trigger: 'blur' },
+    ],
+    phone: [{ required: true, validator: validatePhone, trigger: 'blur' }],
+    email: [{ type: 'email', message: '请输入正确的邮箱格式', trigger: 'blur' }],
+    roleIds: [{ required: true, message: '至少选择一个角色', trigger: 'change' }],
+  }
+  if (!isEdit.value) {
+    rules.departmentIds = [{ required: true, message: '请至少选择一个部门', trigger: 'change' }]
+  }
+  return rules
+})
 
 const phoneFormRules: FormRules = {
   phone: [{ required: true, validator: validatePhone, trigger: 'blur' }],
@@ -307,13 +323,20 @@ async function fetchList() {
   }
 }
 
+function buildDeptTree(nodes: DepartmentRecord[]): DepartmentRecord[] {
+  return nodes.map((node) => ({
+    ...node,
+    children: node.children?.length ? buildDeptTree(node.children) : [],
+  }))
+}
+
 async function fetchOptions() {
-  const [rolesRes, deptsRes] = await Promise.all([
+  const [rolesRes, tree] = await Promise.all([
     getRoleList({ page: 1, size: 100 }),
-    getDepartmentList({ page: 1, size: 100 }),
+    getDepartmentTree(),
   ])
   roleList.value = rolesRes.records
-  departmentList.value = deptsRes.records
+  departmentTree.value = buildDeptTree(tree)
 }
 
 function handleSearch() {
@@ -332,7 +355,7 @@ function resetForm() {
   form.username = ''
   form.phone = ''
   form.email = ''
-  form.departmentId = undefined
+  form.departmentIds = []
   form.roleIds = []
   form.statusBool = 1
   formRef.value?.resetFields()
@@ -358,7 +381,7 @@ async function openEditDialog(id: number) {
     const detail = await getStaffDetail(id)
     form.username = detail.username
     form.email = detail.email || ''
-    form.departmentId = detail.departmentId ?? undefined
+    form.departmentIds = detail.departmentIds || []
     form.roleIds = detail.roles?.map((r) => r.id) || []
     form.statusBool = detail.status
     dialogVisible.value = true
@@ -377,7 +400,7 @@ async function handleSubmit() {
       await updateStaff(editId.value, {
         username: form.username,
         email: form.email || undefined,
-        departmentId: form.departmentId,
+        departmentIds: form.departmentIds.length ? form.departmentIds : undefined,
         roleIds: form.roleIds,
         status: form.statusBool,
       })
@@ -387,7 +410,7 @@ async function handleSubmit() {
         username: form.username,
         phone: form.phone,
         email: form.email || undefined,
-        departmentId: form.departmentId,
+        departmentIds: form.departmentIds,
         roleIds: form.roleIds,
         status: form.statusBool,
       })

@@ -61,8 +61,8 @@
         <div class="card-header">
           <span>来访记录</span>
           <div class="card-header-actions">
-            <el-button @click="openDraftDialog">草稿箱</el-button>
-            <el-button type="primary" @click="openCreateDialog">新增来访</el-button>
+            <el-button v-if="userStore.canWrite" @click="openDraftDialog">草稿箱</el-button>
+            <el-button v-if="userStore.canWrite" type="primary" @click="openCreateDialog">新增来访</el-button>
           </div>
         </div>
       </template>
@@ -111,7 +111,7 @@
             <template v-if="row.channelInstanceName"> / {{ row.channelInstanceName }}</template>
           </template>
         </el-table-column>
-        <el-table-column prop="detailDescription" label="说明" min-width="140" show-overflow-tooltip />
+        <el-table-column prop="detailDescription" label="接访概要" min-width="140" show-overflow-tooltip />
         <el-table-column label="需求" min-width="140">
           <template #default="{ row }">
             <template v-if="row.requirementsConfig">
@@ -198,61 +198,17 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="selectedChannel?.instanceType === 'agency'" label="中介公司">
-          <el-select v-model="form.channelInstanceId" clearable filterable placeholder="选择中介公司" style="width:100%">
-            <el-option
-              v-for="a in agencyList"
-              :key="a.id"
-              :value="a.id"
-              :label="a.companyName"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item v-else-if="form.channelId" label="实例名称">
-          <el-input v-model="form.channelInstanceName" placeholder="渠道实例名称（如客户名等）" />
-        </el-form-item>
-        <el-form-item label="详情说明">
-          <el-input v-model="form.detailDescription" type="textarea" :rows="2" placeholder="来访详情描述" />
+        <ChannelInstanceFields
+          v-if="form.channelId"
+          :channel="selectedChannel"
+          v-model:channel-instance-id="form.channelInstanceId"
+          v-model:channel-instance-name="form.channelInstanceName"
+        />
+        <el-form-item label="接访概要" prop="detailDescription">
+          <el-input v-model="form.detailDescription" type="textarea" :rows="2" placeholder="请至少填写10个字" maxlength="500" show-word-limit />
         </el-form-item>
         <el-form-item v-if="reqSchema.length" label="需求配置">
-          <div class="requirements-wrap">
-            <div v-for="item in reqSchema" :key="item.key" class="req-row">
-              <span class="req-label">{{ item.key }}</span>
-              <el-input
-                v-if="item.type === 'text'"
-                v-model="form.reqValues[item.key]"
-                placeholder="请输入"
-                style="width:240px"
-              />
-              <el-input
-                v-else-if="item.type === 'int'"
-                v-model="form.reqValues[item.key]"
-                placeholder="请输入整数"
-                style="width:240px"
-                type="number"
-              />
-              <el-input
-                v-else-if="item.type === 'float'"
-                v-model="form.reqValues[item.key]"
-                placeholder="请输入浮点数"
-                style="width:240px"
-                type="number"
-              />
-              <el-date-picker
-                v-else-if="item.type === 'date'"
-                v-model="form.reqValues[item.key]"
-                type="date"
-                value-format="YYYY-MM-DD"
-                style="width:240px"
-              />
-              <el-input
-                v-else
-                v-model="form.reqValues[item.key]"
-                placeholder="请输入"
-                style="width:240px"
-              />
-            </div>
-          </div>
+          <VisitRequirementsFields v-model="form.reqValues" :schema="reqSchema" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -268,7 +224,7 @@
       :close-on-click-modal="false"
     >
       <div style="margin-bottom:12px">
-        <el-button type="primary" size="small" @click="openDraftCreate">新增草稿</el-button>
+        <el-button v-if="userStore.canWrite" type="primary" size="small" @click="openDraftCreate">新增草稿</el-button>
       </div>
       <el-table :data="draftList" v-loading="draftLoading" stripe size="small">
         <el-table-column prop="id" label="ID" width="60" />
@@ -280,8 +236,8 @@
           </template>
         </el-table-column>
         <el-table-column prop="channelTypeName" label="渠道" width="80" />
-        <el-table-column prop="detailDescription" label="说明" min-width="100" show-overflow-tooltip />
-        <el-table-column label="操作" width="200" fixed="right">
+        <el-table-column prop="detailDescription" label="接访概要" min-width="100" show-overflow-tooltip />
+        <el-table-column v-if="userStore.canWrite" label="操作" width="200" fixed="right">
           <template #default="{ row: dr }">
             <el-button link type="primary" size="small" @click="editDraft(dr)">修改</el-button>
             <el-button link type="danger" size="small" @click="deleteDraftItem(dr.id)">删除</el-button>
@@ -351,7 +307,7 @@
               <template v-if="v.channelInstanceName"> / {{ v.channelInstanceName }}</template>
             </template>
           </el-table-column>
-          <el-table-column prop="detailDescription" label="说明" min-width="120" />
+          <el-table-column prop="detailDescription" label="接访概要" min-width="120" />
         </el-table>
         <el-empty v-else description="暂无来访记录" :image-size="60" />
 
@@ -386,7 +342,7 @@
       </template>
       <template #footer>
         <el-button @click="clientDetailVisible = false">关闭</el-button>
-        <el-button type="primary" @click="startVisitFromClient(clientDetail)">继续添加来访</el-button>
+        <el-button v-if="userStore.canWrite" type="primary" @click="startVisitFromClient(clientDetail)">继续添加来访</el-button>
       </template>
     </el-dialog>
 
@@ -400,7 +356,7 @@
         <el-descriptions :column="2" border>
           <el-descriptions-item label="房源名称">{{ houseDetail.house.houseName }}</el-descriptions-item>
           <el-descriptions-item label="状态">
-            <el-tag :type="houseDetail.house.houseStatus === 'idle' ? '' : 'success'" size="small">
+            <el-tag :type="houseStatusTagType(houseDetail.house.houseStatus)" size="small">
               {{ houseDetail.house.houseStatusName }}
             </el-tag>
           </el-descriptions-item>
@@ -412,7 +368,7 @@
           <el-descriptions-item label="描述" :span="2">{{ houseDetail.house.description || '-' }}</el-descriptions-item>
         </el-descriptions>
 
-        <h4 class="section-title">指导价历史</h4>
+        <h4 class="section-title">报价历史</h4>
         <el-table v-if="houseDetail.guidePrices?.length" :data="houseDetail.guidePrices" size="small" stripe>
           <el-table-column prop="versionName" label="版本" width="100" />
           <el-table-column prop="priceValue" label="价格(元/㎡)" width="120" />
@@ -421,8 +377,9 @@
             <template #default="{ row }">{{ row.expiryDate || '至今' }}</template>
           </el-table-column>
         </el-table>
-        <el-empty v-else description="暂无指导价数据" :image-size="60" />
+        <el-empty v-else description="暂无报价数据" :image-size="60" />
 
+        <template v-if="userStore.canViewAssessedPrice">
         <h4 class="section-title">评估价历史</h4>
         <el-table v-if="houseDetail.assessedPrices?.length" :data="houseDetail.assessedPrices" size="small" stripe>
           <el-table-column prop="versionName" label="版本" width="100" />
@@ -433,11 +390,12 @@
           </el-table-column>
         </el-table>
         <el-empty v-else description="暂无评估价数据" :image-size="60" />
+        </template>
       </template>
       <template #footer>
         <el-button @click="houseDetailVisible = false">关闭</el-button>
         <el-button
-          v-if="houseDetail?.house.houseStatus !== 'rented'"
+          v-if="userStore.canWrite && isHouseAvailableForDeal(houseDetail?.house.houseStatus)"
           type="primary"
           @click="startVisitFromHouse"
         >继续添加来访</el-button>
@@ -452,7 +410,7 @@
       <template #header>
         <div class="detail-header">
           <span>来访详情</span>
-          <div class="detail-header-actions">
+          <div v-if="userStore.canWrite" class="detail-header-actions">
             <el-button
               type="primary"
               size="small"
@@ -480,7 +438,7 @@
             <template v-if="visitDetail.channelInstanceName"> / {{ visitDetail.channelInstanceName }}</template>
           </el-descriptions-item>
           <el-descriptions-item label="添加人">{{ visitDetail.createdBy || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="详情说明" :span="2">{{ visitDetail.detailDescription || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="接访概要" :span="2">{{ visitDetail.detailDescription || '-' }}</el-descriptions-item>
         </el-descriptions>
 
         <h4 class="section-title">带看房源</h4>
@@ -488,7 +446,7 @@
           <el-table-column prop="houseName" label="房源名称" />
           <el-table-column label="状态" width="100">
             <template #default="{ row: h }">
-              <el-tag :type="h.houseStatus === 'idle' ? '' : 'success'" size="small">
+              <el-tag :type="houseStatusTagType(h.houseStatus)" size="small">
                 {{ h.houseStatusName }}
               </el-tag>
             </template>
@@ -537,9 +495,20 @@ import { getClientList, getClientDetail, getClientContacts, type ClientRecord, t
 import { getContactDetail, type ContactRecord } from '@/api/contact'
 import { getDealList, type DealRecord } from '@/api/deal'
 import { getHouseList, getHouseDetail, type HouseDetail } from '@/api/house'
-import { getChannelList, getAgencyList, type ChannelRecord, type AgencyRecord } from '@/api/channel'
+import { getChannelList, type ChannelRecord } from '@/api/channel'
+import { appendChannelInstancePayload, validateChannelInstance } from '@/utils/channel-instance'
+import ChannelInstanceFields from '@/components/ChannelInstanceFields.vue'
 import { getParamByKey } from '@/api/system'
 import { useUserStore } from '@/stores/user'
+import { houseStatusTagType, isHouseAvailableForDeal } from '@/constants/house-status'
+import VisitRequirementsFields from '@/components/VisitRequirementsFields.vue'
+import {
+  applyRequirementDefaults,
+  buildRequirementsConfig,
+  parseVisitRequirementSchema,
+  validateRequirementValues,
+  type VisitRequirementSchemaItem,
+} from '@/utils/visit-requirement'
 
 const userStore = useUserStore()
 
@@ -556,7 +525,6 @@ const total = ref(0)
 const clientList = ref<ClientRecord[]>([])
 const channelList = ref<ChannelRecord[]>([])
 const houseList = ref<{ id: number; houseName: string }[]>([])
-const agencyList = ref<AgencyRecord[]>([])
 const selectedChannel = ref<ChannelRecord | null>(null)
 
 const clientContactList = ref<ClientContact[]>([])
@@ -576,10 +544,13 @@ const visitDetail = ref<VisitRecord | null>(null)
 
 const reqTableData = computed(() => {
   if (!visitDetail.value?.requirementsConfig) return []
-  return Object.entries(visitDetail.value.requirementsConfig).map(([key, value]) => ({ key, value }))
+  return Object.entries(visitDetail.value.requirementsConfig).map(([key, value]) => ({
+    key,
+    value: Array.isArray(value) ? value.join('、') : value,
+  }))
 })
 
-const reqSchema = ref<{ key: string; type: string }[]>([])
+const reqSchema = ref<VisitRequirementSchemaItem[]>([])
 
 const draftDialogVisible = ref(false)
 const draftLoading = ref(false)
@@ -613,6 +584,22 @@ const formRules: FormRules = {
   visitDate: [{ required: true, message: '请选择来访日期', trigger: 'blur' }],
   clientId: [{ required: true, message: '请选择客户', trigger: 'change' }],
   houseIds: [{ required: true, message: '请选择带看房源', trigger: 'change' }],
+  detailDescription: [{
+    required: true,
+    validator: (_rule, value, callback) => {
+      const text = (value || '').trim()
+      if (!text) {
+        callback(new Error('请输入接访概要'))
+        return
+      }
+      if (text.length < 10) {
+        callback(new Error('接访概要至少10个字'))
+        return
+      }
+      callback()
+    },
+    trigger: 'blur',
+  }],
 }
 
 function formatTime(dateStr: string) {
@@ -629,28 +616,40 @@ function fillFormFromDraft(d: VisitDraftRecord) {
   form.channelInstanceId = d.channelInstanceId ?? undefined
   form.channelInstanceName = d.channelInstanceName || ''
   form.detailDescription = d.detailDescription || ''
-  form.reqValues = d.requirementsConfig ? { ...d.requirementsConfig } : {}
+  form.reqValues = normalizeReqValues(d.requirementsConfig as Record<string, unknown>)
   selectedChannel.value = null
 }
 
+function normalizeReqValues(config?: Record<string, unknown> | null): Record<string, string> {
+  if (!config) return {}
+  return Object.fromEntries(
+    Object.entries(config).map(([key, value]) => [
+      key,
+      Array.isArray(value) ? value.map(String).join(',') : String(value ?? ''),
+    ]),
+  )
+}
+
 function buildSavePayload() {
-  const requirementsConfig: Record<string, string> = {}
-  Object.entries(form.reqValues).forEach(([key, val]) => {
-    if (val) requirementsConfig[key] = val
-  })
   const payload: any = {
     visitDate: form.visitDate || undefined,
     clientId: form.clientId,
     contactId: form.contactId,
     houseIds: form.houseIds.length ? form.houseIds : undefined,
     channelId: form.channelId,
-    detailDescription: form.detailDescription || undefined,
-    requirementsConfig: Object.keys(requirementsConfig).length ? requirementsConfig : undefined,
+    detailDescription: form.detailDescription?.trim() || undefined,
   }
-  if (form.channelId && selectedChannel.value?.instanceType === 'agency') {
-    payload.channelInstanceId = form.channelInstanceId
-  } else if (form.channelId) {
-    payload.channelInstanceName = form.channelInstanceName || undefined
+  const requirementsConfig = buildRequirementsConfig(reqSchema.value, form.reqValues)
+  if (Object.keys(requirementsConfig).length) {
+    payload.requirementsConfig = requirementsConfig
+  }
+  if (form.channelId) {
+    appendChannelInstancePayload(
+      payload,
+      selectedChannel.value,
+      form.channelInstanceId,
+      form.channelInstanceName,
+    )
   }
   return payload
 }
@@ -712,12 +711,7 @@ function resetForm() {
 async function fetchReqSchema() {
   try {
     const res = await getParamByKey('CVRC')
-    const schema = JSON.parse(res.paramValue)
-    if (Array.isArray(schema)) {
-      reqSchema.value = schema.filter((s: any) => s && s.key)
-    } else {
-      reqSchema.value = []
-    }
+    reqSchema.value = parseVisitRequirementSchema(res.paramValue)
   } catch {
     reqSchema.value = []
   }
@@ -736,13 +730,8 @@ async function onClientChange(clientId: number | undefined) {
 async function onChannelChange(channelId: number | undefined) {
   form.channelInstanceId = undefined
   form.channelInstanceName = ''
-  agencyList.value = []
   if (channelId) {
     selectedChannel.value = channelList.value.find((c) => c.id === channelId) || null
-    if (selectedChannel.value?.instanceType === 'agency') {
-      const res = await getAgencyList(channelId, { page: 1, size: 200 })
-      agencyList.value = res.records
-    }
   } else {
     selectedChannel.value = null
   }
@@ -752,6 +741,7 @@ async function openCreateDialog() {
   isEdit.value = false; isDraft.value = false; editId.value = 0; draftId.value = 0
   resetForm()
   await fetchReqSchema()
+  form.reqValues = applyRequirementDefaults(reqSchema.value, {})
   dialogVisible.value = true
 }
 
@@ -776,7 +766,9 @@ async function openEditDialog(id: number) {
       form.channelInstanceName = detail.channelInstanceName || ''
     }
     if (detail.requirementsConfig) {
-      form.reqValues = { ...detail.requirementsConfig }
+      form.reqValues = normalizeReqValues(detail.requirementsConfig as Record<string, unknown>)
+    } else {
+      form.reqValues = applyRequirementDefaults(reqSchema.value, {})
     }
     dialogVisible.value = true
   } catch {
@@ -805,6 +797,24 @@ async function handleSubmit() {
   const valid = await formRef.value?.validate().catch(() => false)
   if (!valid) return
 
+  if (form.channelId) {
+    const channelInstanceError = validateChannelInstance(
+      selectedChannel.value,
+      form.channelInstanceId,
+      form.channelInstanceName,
+    )
+    if (channelInstanceError) {
+      ElMessage.error(channelInstanceError)
+      return
+    }
+  }
+
+  const reqError = validateRequirementValues(reqSchema.value, form.reqValues)
+  if (reqError) {
+    ElMessage.error(reqError)
+    return
+  }
+
   submitLoading.value = true
   try {
     const payload = buildSavePayload()
@@ -831,17 +841,17 @@ async function openClientDetail(id: number) {
   clientDetail.value = null
   clientDeals.value = []
   clientDetailVisible.value = true
-  try {
-    const [d, dealsRes] = await Promise.all([
-      getClientDetail(id),
-      getDealList({ clientId: id, size: 50 }),
-    ])
-    clientDetail.value = d
-    clientDeals.value = dealsRes.records
-  } catch {
+  const [detailResult, dealsResult] = await Promise.allSettled([
+    getClientDetail(id),
+    getDealList({ clientId: id, size: 50 }),
+  ])
+  if (detailResult.status === 'rejected') {
     ElMessage.error('获取客户详情失败')
     clientDetailVisible.value = false
+    return
   }
+  clientDetail.value = detailResult.value
+  clientDeals.value = dealsResult.status === 'fulfilled' ? dealsResult.value.records : []
 }
 
 async function openHouseDetail(id: number) {

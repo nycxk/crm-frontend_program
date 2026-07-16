@@ -10,6 +10,7 @@ export interface HouseBriefVO {
   operationDepartmentName: string
   houseStatus: string
   houseStatusName: string
+  images?: string[]
 }
 
 export interface UserBriefVO {
@@ -76,6 +77,11 @@ export interface InternalRentUpdateParams {
   otherDescription?: string
 }
 
+export interface InternalRentPosterGenerateParams {
+  fields: string[]
+  imageUrls: string[]
+}
+
 export function getInternalRentList(query: InternalRentQuery): Promise<PageResult<InternalRentRecord>> {
   return get('/api/internal-rents', query)
 }
@@ -91,6 +97,6 @@ export function updateInternalRent(id: number, data: InternalRentUpdateParams): 
 export function deleteInternalRent(id: number): Promise<null> {
   return del(`/api/internal-rents/${id}`)
 }
-export function generateInternalRentPoster(id: number): Promise<InternalRentRecord> {
-  return post(`/api/internal-rents/${id}/poster`)
+export function generateInternalRentPoster(id: number, data: InternalRentPosterGenerateParams): Promise<InternalRentRecord> {
+  return post(`/api/internal-rents/${id}/poster`, data)
 }

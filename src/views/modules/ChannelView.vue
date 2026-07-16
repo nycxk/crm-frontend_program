@@ -6,7 +6,7 @@
           <template #header>
             <div class="card-header">
               <span>渠道类型</span>
-              <el-button type="primary" size="small" @click="openChannelDialog()">新增渠道</el-button>
+              <el-button v-if="userStore.canWrite" type="primary" size="small" @click="openChannelDialog()">新增渠道</el-button>
             </div>
           </template>
           <el-form :inline="true" :model="channelQuery" class="search-form">
@@ -52,8 +52,9 @@
                   {{ selectedChannel.instanceType === 'agency' ? '可挂中介公司' : '无二级数据' }}
                 </el-tag>
               </span>
-              <div class="header-actions">
+              <div v-if="userStore.canWrite" class="header-actions">
                 <el-button type="primary" size="small" @click="openChannelDialog(selectedChannel.id)">编辑渠道</el-button>
+                <el-button type="danger" size="small" plain @click="handleDeleteChannel">删除渠道</el-button>
                 <el-button
                   v-if="selectedChannel.instanceType === 'agency'"
                   type="primary"
@@ -81,6 +82,12 @@
               <el-table-column prop="companyName" label="公司名称" min-width="200" />
               <el-table-column label="创建时间" width="180">
                 <template #default="{ row }">{{ formatTime(row.createTime) }}</template>
+              </el-table-column>
+              <el-table-column v-if="userStore.canWrite" label="操作" width="140" align="center" fixed="right">
+                <template #default="{ row }">
+                  <el-button type="primary" link size="small" @click.stop="openAgencyDialog(row.id)">编辑</el-button>
+                  <el-button type="danger" link size="small" @click.stop="handleDeleteAgency(row)">删除</el-button>
+                </template>
               </el-table-column>
             </el-table>
             <div class="pagination-wrap">
@@ -147,19 +154,24 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import {
   getChannelList,
   getChannelDetail,
   createChannel,
   updateChannel,
+  deleteChannel,
   getAgencyList,
   createAgency,
   updateAgency,
+  deleteAgency,
   type ChannelRecord,
   type AgencyRecord,
 } from '@/api/channel'
+import { useUserStore } from '@/stores/user'
+
+const userStore = useUserStore()
 
 const channelLoading = ref(false)
 const channelList = ref<ChannelRecord[]>([])
@@ -356,6 +368,43 @@ async function handleAgencySubmit() {
   }
 }
 
+function handleDeleteChannel() {
+  if (!selectedChannel.value) return
+  const channel = selectedChannel.value
+  ElMessageBox.confirm(
+    `确认删除渠道「${channel.typeName}」吗？若已被来访或成交引用，或仍有关联中介公司，将无法删除。`,
+    '删除确认',
+    { confirmButtonText: '确定删除', cancelButtonText: '取消', type: 'warning' },
+  )
+    .then(async () => {
+      await deleteChannel(channel.id)
+      ElMessage.success('删除成功')
+      selectedChannel.value = null
+      agencyList.value = []
+      agencyTotal.value = 0
+      fetchChannelList()
+    })
+    .catch(() => {})
+}
+
+function handleDeleteAgency(row: AgencyRecord) {
+  if (!selectedChannel.value) return
+  const channel = selectedChannel.value
+  ElMessageBox.confirm(
+    `确认删除中介公司「${row.companyName}」吗？若已被来访记录引用将无法删除。`,
+    '删除确认',
+    { confirmButtonText: '确定删除', cancelButtonText: '取消', type: 'warning' },
+  )
+    .then(async () => {
+      await deleteAgency(channel.id, row.id)
+      ElMessage.success('删除成功')
+      channel.agencyCount = Math.max(0, channel.agencyCount - 1)
+      fetchAgencyList()
+      fetchChannelList()
+    })
+    .catch(() => {})
+}
+
 onMounted(() => {
   fetchChannelList()
 })
@@ -376,6 +425,12 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .search-form {

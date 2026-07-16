@@ -4,7 +4,7 @@
       <el-icon class="loading-icon" :size="36"><Loading /></el-icon>
       <span>正在加载用户信息...</span>
     </div>
-    <el-container v-else>
+    <el-container v-else class="layout-shell">
       <el-aside :width="isCollapse ? '64px' : '220px'" class="layout-aside">
         <div class="aside-header">
           <div class="logo-area" @click="isCollapse = !isCollapse">
@@ -43,7 +43,7 @@
         </el-menu>
       </el-aside>
 
-      <el-container>
+      <el-container class="layout-body">
         <el-header class="layout-header">
           <div class="header-left">
             <el-icon class="collapse-btn" :size="20" @click="isCollapse = !isCollapse">
@@ -167,12 +167,21 @@ function handleChangePwdSuccess() {
 <style scoped>
 .layout {
   height: 100vh;
+  overflow: hidden;
+}
+
+.layout-shell {
+  height: 100%;
 }
 
 .layout-aside {
   background-color: #001529;
   overflow: hidden;
   transition: width 0.3s;
+  flex-shrink: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 .aside-header {
@@ -202,10 +211,19 @@ function handleChangePwdSuccess() {
 
 .layout-aside :deep(.el-menu) {
   border-right: none;
+  flex: 1;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .layout-aside :deep(.el-menu-item.is-active) {
   background-color: #1890ff !important;
+}
+
+.layout-body {
+  height: 100%;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .layout-header {
@@ -216,6 +234,7 @@ function handleChangePwdSuccess() {
   border-bottom: 1px solid #e8e8e8;
   height: 56px;
   padding: 0 20px;
+  flex-shrink: 0;
 }
 
 .header-left {
@@ -244,7 +263,9 @@ function handleChangePwdSuccess() {
 
 .layout-main {
   background-color: #f0f2f5;
-  min-height: calc(100vh - 56px);
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   padding: 24px;
 }
 

@@ -56,7 +56,8 @@ export interface UserProfile {
   email: string | null
   avatarUrl: string | null
   phone: string
-  departmentId: number | null
+  /** 归属部门 ID 列表（一人可属多个同类型部门） */
+  departmentIds: number[] | null
   status: number
   defaultPassword: number
   defaultPasswordName: string
@@ -64,6 +65,9 @@ export interface UserProfile {
   lastLoginAt: string
   roles: RoleInfo[]
   modules: ModuleInfo[]
+  readOnly?: boolean
+  /** 是否可查看/调整评估价（营销中心管理员） */
+  canViewAssessedPrice?: boolean
 }
 
 export interface ChangePasswordParams {

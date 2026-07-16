@@ -5,7 +5,9 @@ export interface StaffRecord {
   username: string
   email: string | null
   phone: string
-  departmentId: number | null
+  departmentIds: number[]
+  departmentNames: string[]
+  /** 部门名称拼接展示（多个用「、」分隔） */
   departmentName: string | null
   status: number
   createdAt: string
@@ -31,13 +33,16 @@ export interface StaffQuery {
   departmentId?: number
   status?: number
   roleId?: number
+  /** 全员营销渠道选人：全系统激活用户，排除系统管理员 */
+  channelPicker?: boolean
 }
 
 export interface StaffSaveParams {
   username: string
   phone: string
   email?: string
-  departmentId?: number
+  /** 归属部门（可多个，须为同一类型：多个经营部或多个项目部） */
+  departmentIds: number[]
   status?: number
   roleIds: number[]
 }
@@ -45,7 +50,8 @@ export interface StaffSaveParams {
 export interface StaffUpdateParams {
   username?: string
   email?: string
-  departmentId?: number
+  /** 归属部门（可多个，须为同一类型）；不传表示不修改 */
+  departmentIds?: number[]
   status?: number
   roleIds?: number[]
 }
@@ -53,7 +59,7 @@ export interface StaffUpdateParams {
 export interface DepartmentRecord {
   id: number
   departmentName: string
-  departmentType: 'marketing_center' | 'operation' | 'project'
+  departmentType: 'marketing' | 'operation' | 'project'
   departmentTypeName: string
   parentId: number
   parentName: string | null
@@ -130,6 +136,11 @@ export interface ModuleTreeNode {
 // 人员管理
 export function getStaffList(query: StaffQuery): Promise<PageResult<StaffRecord>> {
   return get('/api/system/staff', query)
+}
+
+/** 全员营销等渠道选人：全系统激活用户，排除系统管理员 */
+export function getChannelPickerStaffList(query?: Omit<StaffQuery, 'channelPicker'>): Promise<PageResult<StaffRecord>> {
+  return get('/api/system/staff/channel-picker', query)
 }
 export function getStaffDetail(id: number): Promise<StaffDetail> {
   return get(`/api/system/staff/${id}`)

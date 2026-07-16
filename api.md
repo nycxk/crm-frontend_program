@@ -21,7 +21,7 @@
 ---
 
 ## 1 认证 API
-
+![img.png](img.png)
 | 方法 | 端点 | 说明 | 权限 |
 |------|------|------|------|
 | POST | `/api/auth/login` | 用户登录 | 公开 |
@@ -2727,7 +2727,7 @@ DELETE /api/visit-drafts/{id}
 | POST | `/api/houses` | 新增房源 |
 | PUT | `/api/houses/{id}` | 修改房源 |
 | DELETE | `/api/houses/{id}` | 软删除房源 |
-| POST | `/api/houses/{id}/guide-prices/rollback` | 回退最新指导价版本 |
+| POST | `/api/houses/{id}/guide-prices/rollback` | 回退最新报价版本 |
 | POST | `/api/houses/{id}/assessed-prices/rollback` | 回退最新评估价版本 |
 | POST | `/api/price-batches/{id}/rollback` | 回退批量调价批次 |
 
@@ -2751,7 +2751,7 @@ DELETE /api/visit-drafts/{id}
 
 列表、详情响应均包含 `houseStatus`、`houseStatusName`。新增成交时仅允许选择**闲置**房源；签约成功后相关房源状态批量更新为在租，并自动停止该房源下未结束的内部招租（写入 `stopDate`，见 [10 内部招租](#10-内部招租-api)）；登记退租后恢复为闲置。
 
-### 8.0.1 指导价 / 评估价（版本说明）
+### 8.0.1 报价 / 评估价（版本说明）
 
 | 概念 | 说明 |
 |------|------|
@@ -2766,7 +2766,7 @@ DELETE /api/visit-drafts/{id}
 |------|------|------|
 | id | long | 价格记录 ID |
 | priceValue | int | 价格数值 |
-| version | int | 房源内版本号（指导价与评估价各自独立） |
+| version | int | 房源内版本号（报价与评估价各自独立） |
 | priceVisionId | long \| null | 批量调整批次 ID；单条维护为 null |
 | versionName | string | 展示名称，如 `V2` |
 | effectiveDate | date | 生效日期 |
@@ -2822,7 +2822,7 @@ Request:
 - departmentId 须为项目部（department_type=project）
 - operationDepartmentId 须为经营部（department_type=operation），且须为该项目部的上级经营部
 - images 为图片 URL 数组，通常由文件上传接口获得
-- 指导价/评估价各新增一条记录，`version` 均为 **1**（两类价格版本互不影响）
+- 报价/评估价各新增一条记录，`version` 均为 **1**（两类价格版本互不影响）
 - `guidePrice` / `assessedPrice` 结构：`priceValue`、`effectiveDate` 必填；`expiryDate` 可选
 - 新建房源默认状态为 **闲置**（`houseStatus=idle`）
 
@@ -2846,8 +2846,8 @@ Query Parameters:
 排序: 按 updateTime 倒序
 
 说明:
-- 每条房源附带当前**最高版本**指导价、评估价（`version` 最大的一条）；无记录时为 `null`
-- 价格字段结构见 [8.0 价格记录对象](#80-指导价--评估价版本说明)
+- 每条房源附带当前**最高版本**报价、评估价（`version` 最大的一条）；无记录时为 `null`
+- 价格字段结构见 [8.0 价格记录对象](#80-报价--评估价版本说明)
 
 Response:
 {
@@ -2983,22 +2983,22 @@ Request（基础字段均可选）:
 DELETE /api/houses/{id}
 ```
 
-删除约束：若房源被来访、成交、指导价、评估价或内部招租引用，则无法删除。
+删除约束：若房源被来访、成交、报价、评估价或内部招租引用，则无法删除。
 
 ### 8.6 价格版本回退
 
-#### 8.6.1 回退房源最新指导价
+#### 8.6.1 回退房源最新报价
 
 ```
 POST /api/houses/{id}/guide-prices/rollback
 
 说明:
-- 软删除当前最高 `version` 的指导价记录
+- 软删除当前最高 `version` 的报价记录
 - 将回退后当前最高版本的 `expiryDate` 置为 `null`（恢复为有效）
 - 已是 V1 时返回业务错误
 - 若该版本已被成交引用（`deal_data.guide_price_id`），无法回退
 
-Response.data: 回退后的当前有效指导价（价格记录对象，结构见 8.0）
+Response.data: 回退后的当前有效报价（价格记录对象，结构见 8.0）
 ```
 
 示例响应:
@@ -3054,7 +3054,7 @@ GET /api/price-batches/template?priceType=guide
 Query:
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| priceType | string | 是 | `guide` 指导价 / `assessed` 评估价 |
+| priceType | string | 是 | `guide` 报价 / `assessed` 评估价 |
 
 Response: Excel 文件流（`.xlsx`）
 
@@ -3121,10 +3121,10 @@ GET /api/price-batches/{id}
 Response.data 批次对象:
 {
   "id": 10,
-  "batchName": "指导价批量调整-2026-06-01",
+  "batchName": "报价批量调整-2026-06-01",
   "batchCode": "G-20260601103000-A1B2",
   "priceType": "guide",
-  "priceTypeLabel": "指导价",
+  "priceTypeLabel": "报价",
   "status": "applied",
   "statusLabel": "已应用",
   "sourceFile": "/uploads/price-batch/2026/06/01/abc.xlsx",
@@ -3198,7 +3198,7 @@ Request:
 - 关联客户的**证件编号**（`idNumber`）均不能为空，否则返回 40002
 - channelTypeId：必填；渠道实例规则同来访（见 §7.4）
 - rentalArea：可选；不传则按所选房源适租面积之和自动计算
-- guidePriceId、assessedPriceId：系统按主房源（houseIds[0]）及签订日期自动匹配时点指导价/评估价
+- guidePriceId、assessedPriceId：系统按主房源（houseIds[0]）及签订日期自动匹配时点报价/评估价
 - 日期约束：起租日期 ≥ 签订日期，退租日期 ≥ 起租日期
 - 成交成功后，关联客户状态自动更新为 `tenant`（租户）
 - 成交成功后，关联房源下**未停止**的内部招租（`stopDate` 为空）自动失效：`stopDate` 设为合同签订日期（`contractSignDate`）；若签订日早于招租发起日，则取招租发起日
@@ -3235,7 +3235,7 @@ Response.data.records[] 主要字段:
 | clientIds / clients | array | 客户 ID 及摘要 |
 | channelTypeId / channelTypeName | - | 渠道类型 |
 | channelInstanceId / channelInstanceModel / channelInstanceName | - | 渠道实例 |
-| guidePriceId / guidePrice | - | 时点指导价 |
+| guidePriceId / guidePrice | - | 时点报价 |
 | assessedPriceId / assessedPrice | - | 时点评估价 |
 | rentalArea | decimal | 租赁面积 |
 | contractTotalAmount | decimal | 合同总额 |
@@ -3264,7 +3264,7 @@ PUT /api/deals/{id}
 
 说明:
 - 已登记实际退租（actualEndDate 非空）的成交不可修改
-- 修改签订日期或房源时，将重新匹配指导价/评估价
+- 修改签订日期或房源时，将重新匹配报价/评估价
 - 请求体字段均可选，传则更新
 ```
 
@@ -3293,7 +3293,7 @@ DELETE /api/deals/{id}
 
 ## 9A 成交草稿 API
 
-业务字段与正式成交一致（不含指导价/评估价、实际退租等系统字段），**均可为空**；不做业务校验。仅当前登录用户可操作自己的草稿。
+业务字段与正式成交一致（不含报价/评估价、实际退租等系统字段），**均可为空**；不做业务校验。仅当前登录用户可操作自己的草稿。
 
 | 方法 | 端点 | 说明 |
 |------|------|------|
@@ -3402,7 +3402,7 @@ GET /api/internal-rents/{id}
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| posterUrl | string | 招租海报访问路径（如 `/uploads/2026/06/03/xxx.png`），未生成时为 null |
+| posterUrl | string | 招租海报相对路径（如 `2026/06/03/xxx.png`）；浏览器访问时前缀 `/uploads/`；未生成时为 null |
 | viewingUserIds | long[] | 看房联系人（内部用户 ID 列表），可为 null |
 | viewingUsers | array | 看房联系人摘要，元素为 `UserBriefVO`（id、username） |
 | initiateUser | object | 发起人 `UserBriefVO` |
@@ -3484,13 +3484,36 @@ POST /api/internal-rents/{id}/poster
 说明:
 - 仅 **正在招租**（`stopDate` 为空）可生成；已停止招租返回业务错误
 - 须在关联房源的数据权限范围内
-- 根据房源首图（`house.images[0]`）、房源信息、内部招租信息合成 PNG 海报，保存至 `uploads` 并写入 `poster_url`
+- 根据房源图片（1 张全幅，2 张左右分栏，3 张主图+副图，4 张及以上 2×2 拼图并在末格显示 `+N`）、房源名称/位置、招租面积/参考价、看房联系人（姓名 + 手机号）合成 PNG 招租海报，保存至 `uploads` 并写入 `poster_url`
 - 重新生成时会尝试删除旧海报文件
 - 房源无图片时使用占位区域展示房源名称
 
 Response.data: 生成后的 `InternalRentVO`（含最新 `posterUrl` 及 enrich 字段）
 
 已有库升级执行：`sql/migrate_internal_rent_poster.sql`
+
+---
+
+## 数据概览（第一期）
+
+路径前缀：`/api/dashboard/overview`
+
+**公共 Query**
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| periodType | string | `month`（默认）/ `quarter` / `year` |
+| periodValue | string | `2026-06` / `2026-Q2` / `2026` |
+
+| 接口 | 说明 |
+|------|------|
+| `GET /api/dashboard/overview/meta` | 看板元数据、权限、默认周期 |
+| `GET /api/dashboard/overview/summary` | 首屏指标卡汇总 |
+| `GET /api/dashboard/overview/new-clients` | 周期新客数 |
+| `GET /api/dashboard/overview/house-inventory` | 空置/在租库存 |
+| `GET /api/dashboard/overview/occupancy-rate` | 出租率 |
+| `GET /api/dashboard/overview/operation-deals` | 各经营部成交对比（`MARKETING_ADMIN`+） |
+| `GET /api/dashboard/overview/operation-deals/trend` | 近 6 周期经营部成交趋势（`MARKETING_ADMIN`+） |
 
 ---
 

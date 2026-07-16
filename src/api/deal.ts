@@ -38,6 +38,7 @@ export interface DealRecord {
   assessedPrice: DealPrice | null
   rentalArea: number
   contractTotalAmount: number
+  unitPrice: number
   contractSignDate: string
   contractStartDate: string
   contractEndDate: string | null
@@ -69,12 +70,13 @@ export interface DealSaveParams {
   channelTypeId: number
   channelInstanceId?: number
   channelInstanceName?: string
-  rentalArea?: number
-  contractTotalAmount?: number
+  rentalArea: number
+  contractTotalAmount: number
+  unitPrice: number
   contractSignDate: string
   contractStartDate: string
-  contractEndDate?: string
-  dealRemark?: string
+  contractEndDate: string
+  dealRemark: string
   contactBusinessUserId?: number
 }
 

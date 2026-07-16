@@ -16,7 +16,8 @@
           <el-date-picker v-model="query.initiateDateTo" type="date" value-format="YYYY-MM-DD" placeholder="止" style="width:140px" @change="handleSearch" />
         </el-form-item>
         <el-form-item label="状态">
-          <el-select v-model="query.status" placeholder="全部" style="width:120px" @change="handleSearch">
+          <el-select v-model="query.status" clearable placeholder="全部" style="width:120px" @change="handleSearch">
+            <el-option value="" label="全部" />
             <el-option value="active" label="正在招租" />
             <el-option value="stopped" label="停止招租" />
           </el-select>
@@ -32,7 +33,7 @@
       <template #header>
         <div class="card-header">
           <span>内部招租列表</span>
-          <el-button type="primary" @click="openCreateDialog">新增招租</el-button>
+          <el-button v-if="canManageInternalRent" type="primary" @click="openCreateDialog">新增招租</el-button>
         </div>
       </template>
 
@@ -40,7 +41,7 @@
         <el-table-column prop="id" label="ID" width="70" />
         <el-table-column label="房源" min-width="150">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" class="item-link" @click.stop="openHouseDetail(row.houseId)">
+            <el-button link type="primary" size="small" class="item-link" @click.stop="openDetailDialog(row.id)">
               {{ row.house?.houseName || '-' }}
             </el-button>
           </template>
@@ -181,9 +182,9 @@
       <template #header>
         <div class="detail-header">
           <span>招租详情</span>
-          <div class="detail-header-actions">
+          <div v-if="canManageInternalRent" class="detail-header-actions">
             <el-tooltip :content="detail?.stopDate ? '已停止招租，不可操作' : '生成招租海报'" placement="top">
-              <el-button type="primary" size="small" :loading="generatePosterLoading" :disabled="!!detail?.stopDate" @click="generatePoster">生成招租海报</el-button>
+              <el-button type="primary" size="small" :loading="generatePosterLoading" :disabled="!!detail?.stopDate" @click="openPosterConfigDialog">生成招租海报</el-button>
             </el-tooltip>
             <el-tooltip :content="detail?.stopDate ? '已停止招租，不可操作' : '编辑招租'" placement="top">
               <el-button type="primary" size="small" :disabled="!!detail?.stopDate" @click="detail && openEditDialog(detail.id)">编辑</el-button>
@@ -242,6 +243,49 @@
     </el-dialog>
 
     <el-dialog
+      v-model="posterConfigVisible"
+      title="生成招租海报"
+      width="640px"
+      :close-on-click-modal="false"
+    >
+      <div class="poster-config-section">
+        <div class="poster-config-header">
+          <span class="poster-config-title">展示字段</span>
+          <el-button link type="primary" @click="selectAllPosterFields">全选</el-button>
+        </div>
+        <el-checkbox-group v-model="posterConfig.fields" class="poster-field-group">
+          <el-checkbox v-for="item in posterFieldOptions" :key="item.key" :value="item.key">
+            {{ item.label }}
+          </el-checkbox>
+        </el-checkbox-group>
+      </div>
+
+      <div class="poster-config-section">
+        <div class="poster-config-header">
+          <span class="poster-config-title">展示图片</span>
+          <el-button link type="primary" :disabled="!posterImageOptions.length" @click="selectAllPosterImages">全选</el-button>
+        </div>
+        <el-checkbox-group v-if="posterImageOptions.length" v-model="posterConfig.imageUrls" class="poster-image-group">
+          <label v-for="(url, index) in posterImageOptions" :key="url" class="poster-image-item">
+            <el-checkbox :value="url" />
+            <el-image
+              :src="resolveImageUrl(url)"
+              fit="cover"
+              style="width:96px; height:96px; border-radius:4px;"
+            />
+            <span class="poster-image-label">图片 {{ index + 1 }}</span>
+          </label>
+        </el-checkbox-group>
+        <el-empty v-else description="当前房源暂无图片" :image-size="60" />
+      </div>
+
+      <template #footer>
+        <el-button @click="posterConfigVisible = false">取消</el-button>
+        <el-button type="primary" :loading="generatePosterLoading" @click="confirmGeneratePoster">生成海报</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
       v-model="houseDetailVisible"
       title="房源详情"
       width="700px"
@@ -251,7 +295,7 @@
         <el-descriptions :column="2" border>
           <el-descriptions-item label="房源名称">{{ houseDetail.house.houseName }}</el-descriptions-item>
           <el-descriptions-item label="状态">
-            <el-tag :type="houseDetail.house.houseStatus === 'idle' ? '' : 'success'" size="small">
+            <el-tag :type="houseStatusTagType(houseDetail.house.houseStatus)" size="small">
               {{ houseDetail.house.houseStatusName }}
             </el-tag>
           </el-descriptions-item>
@@ -277,7 +321,7 @@
         </div>
         <el-empty v-else description="暂无图片" :image-size="60" />
 
-        <h4 class="section-title">指导价历史</h4>
+        <h4 class="section-title">报价历史</h4>
         <el-table v-if="houseDetail.guidePrices?.length" :data="houseDetail.guidePrices" size="small" stripe>
           <el-table-column prop="versionName" label="版本" width="100" />
           <el-table-column prop="priceValue" label="价格(元/㎡)" width="120" />
@@ -286,8 +330,9 @@
             <template #default="{ row }">{{ row.expiryDate || '至今' }}</template>
           </el-table-column>
         </el-table>
-        <el-empty v-else description="暂无指导价数据" :image-size="60" />
+        <el-empty v-else description="暂无报价数据" :image-size="60" />
 
+        <template v-if="userStore.canViewAssessedPrice">
         <h4 class="section-title">评估价历史</h4>
         <el-table v-if="houseDetail.assessedPrices?.length" :data="houseDetail.assessedPrices" size="small" stripe>
           <el-table-column prop="versionName" label="版本" width="100" />
@@ -298,6 +343,7 @@
           </el-table-column>
         </el-table>
         <el-empty v-else description="暂无评估价数据" :image-size="60" />
+        </template>
       </template>
     </el-dialog>
   </div>
@@ -309,9 +355,18 @@ import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { getInternalRentList, getInternalRentDetail, createInternalRent, updateInternalRent, generateInternalRentPoster,
   type InternalRentRecord,
+  type InternalRentPosterGenerateParams,
 } from '@/api/internal-rent'
-import { getHouseList, getHouseDetail, resolveImageUrl, type HouseDetail } from '@/api/house'
+import { getHouseList, resolveImageUrl, type HouseDetail } from '@/api/house'
 import { getStaffList, type StaffRecord } from '@/api/system'
+import { useUserStore } from '@/stores/user'
+import { DEFAULT_POSTER_FIELD_KEYS, INTERNAL_RENT_POSTER_FIELDS } from '@/constants/internal-rent-poster'
+import { houseStatusTagType, isHouseAvailableForDeal } from '@/constants/house-status'
+
+const posterFieldOptions = INTERNAL_RENT_POSTER_FIELDS
+
+const userStore = useUserStore()
+const canManageInternalRent = computed(() => userStore.canWrite && userStore.roleCode !== 'SALES')
 
 const loading = ref(false)
 const dialogVisible = ref(false)
@@ -324,9 +379,15 @@ const total = ref(0)
 const houseList = ref<{ id: number; houseName: string }[]>([])
 const staffList = ref<StaffRecord[]>([])
 const generatePosterLoading = ref(false)
+const posterConfigVisible = ref(false)
+const posterImageOptions = ref<string[]>([])
+const posterConfig = reactive({
+  fields: [...DEFAULT_POSTER_FIELD_KEYS] as string[],
+  imageUrls: [] as string[],
+})
 
 const formHouseList = computed(() =>
-  houseList.value.filter((h) => (h as any).houseStatus === 'idle'),
+  houseList.value.filter((h) => isHouseAvailableForDeal((h as any).houseStatus)),
 )
 
 const detailVisible = ref(false)
@@ -339,7 +400,7 @@ const houseDetail = ref<HouseDetail | null>(null)
 const query = reactive({
   keyword: '',
   houseId: undefined as number | undefined,
-  status: 'active',
+  status: '' as string,
   initiateDateFrom: '' as string,
   initiateDateTo: '' as string,
   page: 1,
@@ -408,7 +469,7 @@ async function fetchList() {
     const params: any = { page: query.page, size: query.size }
     if (query.keyword) params.keyword = query.keyword
     if (query.houseId) params.houseId = query.houseId
-    params.status = query.status
+    if (query.status) params.status = query.status
     if (query.initiateDateFrom) params.initiateDateFrom = query.initiateDateFrom
     if (query.initiateDateTo) params.initiateDateTo = query.initiateDateTo
     const res = await getInternalRentList(params)
@@ -430,7 +491,7 @@ function handleSearch() { query.page = 1; fetchList() }
 function handleReset() {
   query.keyword = ''
   query.houseId = undefined
-  query.status = 'active'
+  query.status = ''
   query.initiateDateFrom = ''
   query.initiateDateTo = ''
   query.page = 1
@@ -518,33 +579,53 @@ async function openDetailDialog(id: number) {
   try {
     const d = await getInternalRentDetail(id)
     detail.value = d
-    if (d.houseId) {
-      const houseDetail = await getHouseDetail(d.houseId)
-      rentalHouseImages.value = houseDetail.house.images || []
-    }
+    rentalHouseImages.value = d.house?.images || []
   }
   catch { ElMessage.error('获取详情失败'); detailVisible.value = false }
 }
 
-async function generatePoster() {
+function resetPosterConfig() {
+  posterConfig.fields = [...DEFAULT_POSTER_FIELD_KEYS]
+  posterConfig.imageUrls = [...posterImageOptions.value]
+}
+
+function selectAllPosterFields() {
+  posterConfig.fields = [...DEFAULT_POSTER_FIELD_KEYS]
+}
+
+function selectAllPosterImages() {
+  posterConfig.imageUrls = [...posterImageOptions.value]
+}
+
+function openPosterConfigDialog() {
   if (!detail.value) return
+  posterImageOptions.value = detail.value.house?.images || rentalHouseImages.value || []
+  resetPosterConfig()
+  posterConfigVisible.value = true
+}
+
+async function confirmGeneratePoster() {
+  if (!detail.value) return
+  if (!posterConfig.fields.length) {
+    ElMessage.warning('请至少选择一项展示字段')
+    return
+  }
+  const payload: InternalRentPosterGenerateParams = {
+    fields: [...posterConfig.fields],
+    imageUrls: [...posterConfig.imageUrls],
+  }
   generatePosterLoading.value = true
   try {
-    const updated = await generateInternalRentPoster(detail.value.id)
+    const updated = await generateInternalRentPoster(detail.value.id, payload)
     detail.value = updated
+    rentalHouseImages.value = updated.house?.images || []
+    posterConfigVisible.value = false
     ElMessage.success('海报生成成功')
   } catch {
     ElMessage.error('海报生成失败')
   } finally {
     generatePosterLoading.value = false
   }
-}
-
-async function openHouseDetail(id: number) {
-  houseDetail.value = null
-  houseDetailVisible.value = true
-  try { houseDetail.value = await getHouseDetail(id) }
-  catch { ElMessage.error('获取房源详情失败'); houseDetailVisible.value = false }
 }
 
 onMounted(() => { fetchList(); fetchOptions() })
@@ -576,4 +657,11 @@ onMounted(() => { fetchList(); fetchOptions() })
   gap: 4px;
 }
 .pagination-wrap { display: flex; justify-content: flex-end; margin-top: 16px; }
+.poster-config-section + .poster-config-section { margin-top: 20px; }
+.poster-config-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.poster-config-title { font-weight: 600; color: #303133; }
+.poster-field-group { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 12px; }
+.poster-image-group { display: flex; flex-wrap: wrap; gap: 12px; }
+.poster-image-item { display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: pointer; }
+.poster-image-label { font-size: 12px; color: #606266; }
 </style>

@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { login as loginApi, logout as logoutApi, getUserProfile, type LoginParams, type ModuleInfo } from '@/api/auth'
 import router from '@/router'
 
@@ -12,11 +12,30 @@ export const useUserStore = defineStore('user', () => {
   const avatarUrl = ref<string>(localStorage.getItem('avatarUrl') || '')
   const roleCode = ref<string>(localStorage.getItem('roleCode') || '')
   const roleName = ref<string>(localStorage.getItem('roleName') || '')
-  const departmentId = ref<number>(Number(localStorage.getItem('departmentId')) || 0)
+  const departmentIds = ref<number[]>(
+    JSON.parse(localStorage.getItem('departmentIds') || '[]'),
+  )
   const modules = ref<ModuleInfo[]>(
     JSON.parse(localStorage.getItem('modules') || '[]'),
   )
   const defaultPassword = ref<number>(Number(localStorage.getItem('defaultPassword')) || 0)
+  const readOnly = ref<boolean>(
+    localStorage.getItem('readOnly') === 'true'
+    || localStorage.getItem('roleCode') === 'COMPANY_LEADER',
+  )
+  const canViewAssessedPrice = ref<boolean>(
+    localStorage.getItem('canViewAssessedPrice') === 'true'
+    || localStorage.getItem('roleCode') === 'MARKETING_ADMIN'
+    || localStorage.getItem('roleCode') === 'SYSTEM_ADMIN',
+  )
+
+  const canWrite = computed(() => {
+    if (readOnly.value) return false
+    if (roleCode.value === 'COMPANY_LEADER') return false
+    return true
+  })
+
+  const canManageAssessedPrice = computed(() => canViewAssessedPrice.value && canWrite.value)
 
   const isLoggedIn = () => !!token.value
 
@@ -41,9 +60,14 @@ export const useUserStore = defineStore('user', () => {
       avatarUrl.value = profile.avatarUrl || ''
       roleCode.value = firstRole?.roleCode || ''
       roleName.value = firstRole?.roleName || ''
-      departmentId.value = profile.departmentId || 0
+      departmentIds.value = profile.departmentIds || []
       modules.value = profile.modules || []
       defaultPassword.value = profile.defaultPassword || 0
+      readOnly.value = !!profile.readOnly
+        || (profile.roles?.some((role) => role.roleCode === 'COMPANY_LEADER') ?? false)
+      canViewAssessedPrice.value = !!profile.canViewAssessedPrice
+        || (profile.roles?.some((role) =>
+          role.roleCode === 'MARKETING_ADMIN' || role.roleCode === 'SYSTEM_ADMIN') ?? false)
 
       localStorage.setItem('username', profile.username)
       localStorage.setItem('userId', String(profile.id))
@@ -52,9 +76,11 @@ export const useUserStore = defineStore('user', () => {
       localStorage.setItem('avatarUrl', profile.avatarUrl || '')
       localStorage.setItem('roleCode', firstRole?.roleCode || '')
       localStorage.setItem('roleName', firstRole?.roleName || '')
-      localStorage.setItem('departmentId', String(profile.departmentId || 0))
+      localStorage.setItem('departmentIds', JSON.stringify(profile.departmentIds || []))
       localStorage.setItem('modules', JSON.stringify(profile.modules || []))
       localStorage.setItem('defaultPassword', String(profile.defaultPassword || 0))
+      localStorage.setItem('readOnly', readOnly.value ? 'true' : 'false')
+      localStorage.setItem('canViewAssessedPrice', canViewAssessedPrice.value ? 'true' : 'false')
 
       profileFetched.value = true
     } finally {
@@ -82,9 +108,11 @@ export const useUserStore = defineStore('user', () => {
     avatarUrl.value = ''
     roleCode.value = ''
     roleName.value = ''
-    departmentId.value = 0
+    departmentIds.value = []
     modules.value = []
     defaultPassword.value = 0
+    readOnly.value = false
+    canViewAssessedPrice.value = false
     profileFetched.value = false
 
     localStorage.removeItem('token')
@@ -96,8 +124,11 @@ export const useUserStore = defineStore('user', () => {
     localStorage.removeItem('roleCode')
     localStorage.removeItem('roleName')
     localStorage.removeItem('departmentId')
+    localStorage.removeItem('departmentIds')
     localStorage.removeItem('modules')
     localStorage.removeItem('defaultPassword')
+    localStorage.removeItem('readOnly')
+    localStorage.removeItem('canViewAssessedPrice')
   }
 
   async function handleLogout() {
@@ -118,9 +149,13 @@ export const useUserStore = defineStore('user', () => {
     avatarUrl,
     roleCode,
     roleName,
-    departmentId,
+    departmentIds,
     modules,
     defaultPassword,
+    readOnly,
+    canWrite,
+    canViewAssessedPrice,
+    canManageAssessedPrice,
     profileFetched,
     profileLoading,
     isLoggedIn,

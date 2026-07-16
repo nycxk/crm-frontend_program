@@ -14,13 +14,10 @@
 
     <el-card class="table-card">
       <template #header>
-        <div class="card-header">
-          <span>角色列表</span>
-          <el-button type="primary" @click="openCreateDialog">新增角色</el-button>
-        </div>
+        <span>角色列表</span>
       </template>
 
-      <el-table :data="tableData" v-loading="loading" stripe highlight-current-row @row-click="openEditDialog">
+      <el-table :data="tableData" v-loading="loading" stripe highlight-current-row @row-click="onRowClick">
         <el-table-column prop="id" label="ID" width="70" />
         <el-table-column prop="roleCode" label="角色编码" min-width="160" />
         <el-table-column prop="roleName" label="角色名称" width="140" />
@@ -51,7 +48,7 @@
 
     <el-dialog
       v-model="dialogVisible"
-      :title="isEdit ? '编辑角色' : '新增角色'"
+      :title="'编辑角色'"
       width="560px"
       :close-on-click-modal="false"
     >
@@ -99,16 +96,17 @@ import {
   getRoleList,
   getModuleTree,
   getRoleDetail,
-  createRole,
   updateRole,
   type RoleRecord,
   type ModuleTreeNode,
 } from '@/api/system'
+import { useUserStore } from '@/stores/user'
+
+const userStore = useUserStore()
 
 const loading = ref(false)
 const dialogVisible = ref(false)
 const submitLoading = ref(false)
-const isEdit = ref(false)
 const editId = ref(0)
 const formRef = ref<FormInstance>()
 const treeRef = ref<InstanceType<typeof ElTree>>()
@@ -191,14 +189,9 @@ function resetForm() {
   treeRef.value?.setCheckedKeys([])
 }
 
-async function openCreateDialog() {
-  if (!moduleTree.value.length) {
-    await fetchModuleTree()
-  }
-  isEdit.value = false
-  editId.value = 0
-  resetForm()
-  dialogVisible.value = true
+async function onRowClick(row: RoleRecord) {
+  if (!userStore.canWrite) return
+  await openEditDialog(row)
 }
 
 async function openEditDialog(row: RoleRecord) {
@@ -206,7 +199,6 @@ async function openEditDialog(row: RoleRecord) {
   if (!moduleTree.value.length) {
     await fetchModuleTree()
   }
-  isEdit.value = true
   editId.value = row.id
   resetForm()
   try {
@@ -242,13 +234,8 @@ async function handleSubmit() {
       moduleIds: allIds,
     }
 
-    if (isEdit.value) {
-      await updateRole(editId.value, payload)
-      ElMessage.success('修改成功')
-    } else {
-      await createRole(payload)
-      ElMessage.success('新增成功')
-    }
+    await updateRole(editId.value, payload)
+    ElMessage.success('修改成功')
     dialogVisible.value = false
     fetchList()
   } finally {
@@ -270,12 +257,6 @@ onMounted(() => {
 
 .search-card :deep(.el-card__body) {
   padding-bottom: 0;
-}
-
-.card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
 }
 
 .module-tree-wrap {

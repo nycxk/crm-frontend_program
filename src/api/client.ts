@@ -29,7 +29,7 @@ export interface ClientVisit {
   channelInstanceId: number
   channelInstanceName: string
   detailDescription: string
-  requirementsConfig: Record<string, string>
+  requirementsConfig?: Record<string, string | string[]>
   createTime: string
   updateTime: string
 }
@@ -42,6 +42,10 @@ export interface ClientRecord {
   createdBy: number
   clientStatus: string
   clientStatusName: string
+  referralRentalLabel?: string | null
+  /** 距自动投放公海剩余天数（仅我的客户） */
+  publicPoolRemainingDays?: number | null
+  publicPoolTime: string | null
   visitCount: number
   contacts: ClientContact[]
   createTime: string
@@ -57,6 +61,9 @@ export interface ClientQuery {
   size?: number
   keyword?: string
   status?: string
+  referralEligible?: boolean
+  /** 业态编码 */
+  businessType?: string
 }
 
 export interface NewContact {

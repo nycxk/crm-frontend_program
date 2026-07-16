@@ -35,6 +35,13 @@ export interface HouseRecord {
   operationDepartmentName: string
   houseStatus: string
   houseStatusName: string
+  businessType: string | null
+  businessTypeName: string | null
+  decorationGrade: string | null
+  beijingDistrict: string | null
+  ringRoad: string | null
+  ringRoadName: string | null
+  utilityStatus: string | null
   guidePrice: PriceRecord | null
   assessedPrice: PriceRecord | null
   createTime: string
@@ -52,7 +59,15 @@ export interface HouseQuery {
   size?: number
   keyword?: string
   departmentId?: number
+  /** 所属经营部 ID */
+  operationDepartmentId?: number
   houseStatus?: string
+  /** 适租面积下限（㎡，含） */
+  rentableAreaMin?: number
+  /** 适租面积上限（㎡，含） */
+  rentableAreaMax?: number
+  /** 房源业态编码 */
+  businessType?: string
 }
 
 export interface HouseSaveParams {
@@ -67,6 +82,12 @@ export interface HouseSaveParams {
   images?: string[]
   departmentId: number
   operationDepartmentId?: number
+  businessType?: string
+  decorationGrade?: string
+  beijingDistrict?: string
+  ringRoad?: string
+  utilityStatus?: string
+  houseStatus?: string
   guidePrice?: PriceInput
   assessedPrice?: PriceInput
 }

@@ -32,8 +32,8 @@
         <div class="card-header">
           <span>成交列表</span>
           <div class="card-header-actions">
-            <el-button @click="openDraftDialog">草稿箱</el-button>
-            <el-button type="primary" @click="openCreateDialog">新建成交</el-button>
+            <el-button v-if="userStore.canWrite" @click="openDraftDialog">草稿箱</el-button>
+            <el-button v-if="userStore.canWrite" type="primary" @click="openCreateDialog">新建成交</el-button>
           </div>
         </div>
       </template>
@@ -69,6 +69,9 @@
         <el-table-column label="合同总额" width="120" align="right">
           <template #default="{ row }">{{ row.contractTotalAmount?.toLocaleString() || '-' }}</template>
         </el-table-column>
+        <el-table-column label="单价" width="100" align="right">
+          <template #default="{ row }">{{ row.unitPrice?.toLocaleString() || '-' }}</template>
+        </el-table-column>
         <el-table-column prop="contractSignDate" label="签订日期" width="110" />
         <el-table-column label="租期" min-width="150">
           <template #default="{ row }">
@@ -100,61 +103,96 @@
     <el-dialog
       v-model="dialogVisible"
       :title="isDraft ? (draftId ? '修改草稿' : '新增草稿') : (isEdit ? '编辑成交' : '新建成交')"
-      width="720px"
+      width="760px"
       :close-on-click-modal="false"
     >
-      <el-form ref="formRef" :model="form" :rules="isDraft ? {} : formRules" label-width="100px">
-        <el-row :gutter="16">
-          <el-col :span="12">
-            <el-form-item label="客户" prop="clientIds">
-              <div class="client-check-row">
-                <el-select v-model="form.clientIds" multiple filterable clearable placeholder="至少选一个客户" style="flex:1">
-                  <el-option v-for="c in clientList" :key="c.id" :value="c.id" :label="c.clientName" />
+      <el-form ref="formRef" :model="form" :rules="isDraft ? {} : formRules" label-width="100px" class="deal-form">
+        <div class="deal-form-grid">
+          <el-row :gutter="20">
+            <el-col :span="12">
+              <el-form-item label="客户" prop="clientIds">
+                <div class="client-check-row">
+                  <el-select v-model="form.clientIds" multiple filterable clearable placeholder="至少选一个客户" style="flex:1">
+                    <el-option v-for="c in clientList" :key="c.id" :value="c.id" :label="c.clientName" />
+                  </el-select>
+                  <el-button :disabled="!form.clientIds.length" :loading="checkIdLoading" @click="handleCheckIdNumber">检验客户</el-button>
+                </div>
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="房源" prop="houseIds">
+                <el-select v-model="form.houseIds" multiple filterable clearable placeholder="请选择内部招租房源" style="width:100%" @change="onHouseIdsChange">
+                  <el-option v-for="h in rentalHouseList" :key="h.id" :value="h.id" :label="h.houseName" />
                 </el-select>
-                <el-button :disabled="!form.clientIds.length" :loading="checkIdLoading" @click="handleCheckIdNumber">检验客户</el-button>
-              </div>
-            </el-form-item>
-            <el-form-item label="渠道类型" prop="channelTypeId">
-              <el-select v-model="form.channelTypeId" filterable clearable placeholder="选择渠道" style="width:100%" @change="onChannelChange">
-                <el-option v-for="ch in channelList" :key="ch.id" :value="ch.id" :label="ch.typeName" />
-              </el-select>
-            </el-form-item>
-            <el-form-item label="租赁面积">
-              <el-input v-model="form.rentalArea" placeholder="不填则自动计算">
-                <template #suffix>㎡</template>
-              </el-input>
-            </el-form-item>
-            <el-form-item label="合同总额">
-              <el-input v-model="form.contractTotalAmount" placeholder="请输入合同总额" />
-            </el-form-item>
-            <el-form-item label="签订日期" prop="contractSignDate">
-              <el-date-picker v-model="form.contractSignDate" type="date" value-format="YYYY-MM-DD" style="width:100%" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="房源" prop="houseIds">
-              <el-select v-model="form.houseIds" multiple filterable clearable placeholder="请选择内部招租房源" style="width:100%" @change="onHouseIdsChange">
-                <el-option v-for="h in rentalHouseList" :key="h.id" :value="h.id" :label="h.houseName" />
-              </el-select>
-            </el-form-item>
-            <el-form-item v-if="selectedChannel?.instanceType === 'agency'" label="中介公司">
-              <el-select v-model="form.channelInstanceId" clearable filterable placeholder="选择中介公司" style="width:100%">
-                <el-option v-for="a in agencyList" :key="a.id" :value="a.id" :label="a.companyName" />
-              </el-select>
-            </el-form-item>
-            <el-form-item v-else-if="form.channelTypeId" label="实例名称">
-              <el-input v-model="form.channelInstanceName" placeholder="渠道实例名称" />
-            </el-form-item>
-            <el-form-item label="起租日期" prop="contractStartDate">
-              <el-date-picker v-model="form.contractStartDate" type="date" value-format="YYYY-MM-DD" style="width:100%" />
-            </el-form-item>
-            <el-form-item label="退租日期" prop="contractEndDate" required>
-              <el-date-picker v-model="form.contractEndDate" type="date" value-format="YYYY-MM-DD" style="width:100%" />
-            </el-form-item>
-          </el-col>
-        </el-row>
-        <el-form-item label="备注">
-          <el-input v-model="form.dealRemark" type="textarea" :rows="2" placeholder="成交备注" maxlength="256" />
+              </el-form-item>
+            </el-col>
+          </el-row>
+
+          <el-row :gutter="20">
+            <el-col :span="12">
+              <el-form-item label="渠道类型" prop="channelTypeId">
+                <el-select v-model="form.channelTypeId" filterable placeholder="选择渠道" style="width:100%" @change="onChannelChange">
+                  <el-option v-for="ch in channelList" :key="ch.id" :value="ch.id" :label="ch.typeName" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <ChannelInstanceFields
+                v-if="form.channelTypeId"
+                :channel="selectedChannel"
+                v-model:channel-instance-id="form.channelInstanceId"
+                v-model:channel-instance-name="form.channelInstanceName"
+              />
+              <el-form-item v-else label="渠道实例">
+                <el-input disabled placeholder="请先选择渠道类型" />
+              </el-form-item>
+            </el-col>
+          </el-row>
+
+          <el-row :gutter="20">
+            <el-col :span="12">
+              <el-form-item label="租赁面积" prop="rentalArea">
+                <el-input v-model="form.rentalArea" placeholder="请输入租赁面积">
+                  <template #suffix>㎡</template>
+                </el-input>
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="单价" prop="unitPrice">
+                <el-input v-model="form.unitPrice" placeholder="请输入单价" />
+              </el-form-item>
+            </el-col>
+          </el-row>
+
+          <el-row :gutter="20">
+            <el-col :span="12">
+              <el-form-item label="合同总额" prop="contractTotalAmount">
+                <el-input v-model="form.contractTotalAmount" placeholder="请输入合同总额" />
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="签订日期" prop="contractSignDate">
+                <el-date-picker v-model="form.contractSignDate" type="date" value-format="YYYY-MM-DD" style="width:100%" />
+              </el-form-item>
+            </el-col>
+          </el-row>
+
+          <el-row :gutter="20">
+            <el-col :span="12">
+              <el-form-item label="起租日期" prop="contractStartDate">
+                <el-date-picker v-model="form.contractStartDate" type="date" value-format="YYYY-MM-DD" style="width:100%" />
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="退租日期" prop="contractEndDate">
+                <el-date-picker v-model="form.contractEndDate" type="date" value-format="YYYY-MM-DD" style="width:100%" />
+              </el-form-item>
+            </el-col>
+          </el-row>
+        </div>
+
+        <el-form-item label="备注" prop="dealRemark" class="deal-form-remark">
+          <el-input v-model="form.dealRemark" type="textarea" :rows="2" placeholder="请输入成交备注" maxlength="256" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -170,7 +208,7 @@
       :close-on-click-modal="false"
     >
       <div style="margin-bottom:12px">
-        <el-button type="primary" size="small" @click="openDraftCreate">新增草稿</el-button>
+        <el-button v-if="userStore.canWrite" type="primary" size="small" @click="openDraftCreate">新增草稿</el-button>
       </div>
       <el-table :data="draftList" v-loading="draftLoading" stripe size="small">
         <el-table-column prop="id" label="ID" width="60" />
@@ -190,7 +228,7 @@
         </el-table-column>
         <el-table-column prop="contractSignDate" label="签订日期" width="110" />
         <el-table-column prop="dealRemark" label="备注" min-width="100" show-overflow-tooltip />
-        <el-table-column label="操作" width="200" fixed="right">
+        <el-table-column v-if="userStore.canWrite" label="操作" width="200" fixed="right">
           <template #default="{ row: dr }">
             <el-button link type="primary" size="small" @click="editDraft(dr)">修改</el-button>
             <el-button link type="danger" size="small" @click="deleteDraftItem(dr.id)">删除</el-button>
@@ -215,7 +253,7 @@
       <template #header>
         <div class="detail-header">
           <span>成交详情</span>
-          <div class="detail-header-actions">
+          <div v-if="userStore.canWrite" class="detail-header-actions">
             <el-button
               type="primary"
               size="small"
@@ -244,6 +282,7 @@
           </el-descriptions-item>
           <el-descriptions-item label="租赁面积">{{ detail.rentalArea }} ㎡</el-descriptions-item>
           <el-descriptions-item label="合同总额">{{ detail.contractTotalAmount?.toLocaleString() }}</el-descriptions-item>
+          <el-descriptions-item label="单价">{{ detail.unitPrice?.toLocaleString() }}</el-descriptions-item>
           <el-descriptions-item label="签订日期">{{ detail.contractSignDate }}</el-descriptions-item>
           <el-descriptions-item label="起租日期">{{ detail.contractStartDate }}</el-descriptions-item>
           <el-descriptions-item label="合同退租">{{ detail.contractEndDate || '-' }}</el-descriptions-item>
@@ -315,7 +354,7 @@
               <template v-if="v.channelInstanceName"> / {{ v.channelInstanceName }}</template>
             </template>
           </el-table-column>
-          <el-table-column prop="detailDescription" label="说明" min-width="120" />
+          <el-table-column prop="detailDescription" label="接访概要" min-width="120" />
         </el-table>
         <el-empty v-else description="暂无来访记录" :image-size="60" />
 
@@ -350,7 +389,7 @@
       </template>
       <template #footer>
         <el-button @click="clientDetailVisible = false">关闭</el-button>
-        <el-button type="primary" @click="startDealFromClient(clientDetail)">继续添加成交</el-button>
+        <el-button v-if="userStore.canWrite" type="primary" @click="startDealFromClient(clientDetail)">继续添加成交</el-button>
       </template>
     </el-dialog>
 
@@ -364,7 +403,7 @@
         <el-descriptions :column="2" border>
           <el-descriptions-item label="房源名称">{{ houseDetail.house.houseName }}</el-descriptions-item>
           <el-descriptions-item label="状态">
-            <el-tag :type="houseDetail.house.houseStatus === 'idle' ? '' : 'success'" size="small">
+            <el-tag :type="houseStatusTagType(houseDetail.house.houseStatus)" size="small">
               {{ houseDetail.house.houseStatusName }}
             </el-tag>
           </el-descriptions-item>
@@ -376,7 +415,7 @@
           <el-descriptions-item label="描述" :span="2">{{ houseDetail.house.description || '-' }}</el-descriptions-item>
         </el-descriptions>
 
-        <h4 class="section-title">指导价历史</h4>
+        <h4 class="section-title">报价历史</h4>
         <el-table v-if="houseDetail.guidePrices?.length" :data="houseDetail.guidePrices" size="small" stripe>
           <el-table-column prop="versionName" label="版本" width="100" />
           <el-table-column prop="priceValue" label="价格(元/㎡)" width="120" />
@@ -385,8 +424,9 @@
             <template #default="{ row }">{{ row.expiryDate || '至今' }}</template>
           </el-table-column>
         </el-table>
-        <el-empty v-else description="暂无指导价数据" :image-size="60" />
+        <el-empty v-else description="暂无报价数据" :image-size="60" />
 
+        <template v-if="userStore.canViewAssessedPrice">
         <h4 class="section-title">评估价历史</h4>
         <el-table v-if="houseDetail.assessedPrices?.length" :data="houseDetail.assessedPrices" size="small" stripe>
           <el-table-column prop="versionName" label="版本" width="100" />
@@ -397,11 +437,12 @@
           </el-table-column>
         </el-table>
         <el-empty v-else description="暂无评估价数据" :image-size="60" />
+        </template>
       </template>
       <template #footer>
         <el-button @click="houseDetailVisible = false">关闭</el-button>
         <el-button
-          v-if="houseDetail?.house.houseStatus !== 'rented'"
+          v-if="userStore.canWrite && isHouseAvailableForDeal(houseDetail?.house.houseStatus)"
           type="primary"
           @click="startDealFromHouse"
         >继续添加成交</el-button>
@@ -420,7 +461,7 @@
       <el-table :data="incompleteClients" size="small" stripe>
         <el-table-column prop="id" label="ID" width="60" />
         <el-table-column prop="clientName" label="客户姓名" />
-        <el-table-column label="操作" width="80">
+        <el-table-column v-if="userStore.canWrite" label="操作" width="80">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="openClientEditPopup(row)">
               修改
@@ -450,7 +491,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import {
@@ -464,8 +505,11 @@ import {
 import { getClientList, getClientDetail, checkIdNumber, updateClient, mergeClients, type ClientRecord, type ClientDetail } from '@/api/client'
 import { getHouseList, getHouseDetail, type HouseRecord, type HouseDetail } from '@/api/house'
 import { getInternalRentList } from '@/api/internal-rent'
-import { getChannelList, getAgencyList, type ChannelRecord, type AgencyRecord } from '@/api/channel'
+import { getChannelList, type ChannelRecord } from '@/api/channel'
+import { appendChannelInstancePayload, validateChannelInstance } from '@/utils/channel-instance'
+import ChannelInstanceFields from '@/components/ChannelInstanceFields.vue'
 import { useUserStore } from '@/stores/user'
+import { houseStatusTagType, isHouseAvailableForDeal } from '@/constants/house-status'
 
 const userStore = useUserStore()
 
@@ -483,7 +527,6 @@ const clientList = ref<ClientRecord[]>([])
 const houseList = ref<HouseRecord[]>([])
 const rentalHouseList = ref<HouseRecord[]>([])
 const channelList = ref<ChannelRecord[]>([])
-const agencyList = ref<AgencyRecord[]>([])
 const selectedChannel = ref<ChannelRecord | null>(null)
 
 const detailVisible = ref(false)
@@ -539,6 +582,7 @@ const form = reactive({
   channelInstanceName: '',
   rentalArea: '',
   contractTotalAmount: '',
+  unitPrice: '',
   contractSignDate: '',
   contractStartDate: '',
   contractEndDate: '',
@@ -549,9 +593,71 @@ const formRules: FormRules = {
   clientIds: [{ required: true, message: '至少选择一个客户', trigger: 'change' }],
   houseIds: [{ required: true, message: '至少选择一个房源', trigger: 'change' }],
   channelTypeId: [{ required: true, message: '请选择渠道类型', trigger: 'change' }],
+  rentalArea: [{
+    required: true,
+    validator: (_rule, value, callback) => {
+      const text = String(value ?? '').trim()
+      if (!text) {
+        callback(new Error('请输入租赁面积'))
+        return
+      }
+      const num = Number(text)
+      if (!Number.isFinite(num) || num <= 0) {
+        callback(new Error('租赁面积必须大于0'))
+        return
+      }
+      callback()
+    },
+    trigger: 'blur',
+  }],
+  contractTotalAmount: [{
+    required: true,
+    validator: (_rule, value, callback) => {
+      const text = String(value ?? '').trim()
+      if (!text) {
+        callback(new Error('请输入合同总额'))
+        return
+      }
+      const num = Number(text)
+      if (!Number.isFinite(num) || num <= 0) {
+        callback(new Error('合同总额必须大于0'))
+        return
+      }
+      callback()
+    },
+    trigger: 'blur',
+  }],
+  unitPrice: [{
+    required: true,
+    validator: (_rule, value, callback) => {
+      const text = String(value ?? '').trim()
+      if (!text) {
+        callback(new Error('请输入单价'))
+        return
+      }
+      const num = Number(text)
+      if (!Number.isFinite(num) || num <= 0) {
+        callback(new Error('单价必须大于0'))
+        return
+      }
+      callback()
+    },
+    trigger: 'blur',
+  }],
   contractSignDate: [{ required: true, message: '请选择签订日期', trigger: 'blur' }],
   contractStartDate: [{ required: true, message: '请选择起租日期', trigger: 'blur' }],
   contractEndDate: [{ required: true, message: '请选择退租日期', trigger: 'blur' }],
+  dealRemark: [{
+    required: true,
+    validator: (_rule, value, callback) => {
+      if (!(value || '').trim()) {
+        callback(new Error('请输入成交备注'))
+        return
+      }
+      callback()
+    },
+    trigger: 'blur',
+  }],
 }
 
 function formatTime(s: string) { return s ? new Date(s).toLocaleString('zh-CN') : '-' }
@@ -564,30 +670,34 @@ function fillFormFromDealDraft(d: DealDraftRecord) {
   form.channelInstanceName = d.channelInstanceName || ''
   form.rentalArea = d.rentalArea ? String(d.rentalArea) : ''
   form.contractTotalAmount = d.contractTotalAmount ? String(d.contractTotalAmount) : ''
+  form.unitPrice = d.unitPrice ? String(d.unitPrice) : ''
   form.contractSignDate = d.contractSignDate || ''
   form.contractStartDate = d.contractStartDate || ''
   form.contractEndDate = d.contractEndDate || ''
   form.dealRemark = d.dealRemark || ''
   selectedChannel.value = null
-  agencyList.value = []
 }
 
 function buildDealPayload() {
   const payload: any = {
     clientIds: form.clientIds,
     houseIds: form.houseIds,
-    channelTypeId: form.channelTypeId || undefined,
-    rentalArea: form.rentalArea ? Number(form.rentalArea) : undefined,
-    contractTotalAmount: form.contractTotalAmount ? Number(form.contractTotalAmount) : undefined,
-    contractSignDate: form.contractSignDate || undefined,
-    contractStartDate: form.contractStartDate || undefined,
-    contractEndDate: form.contractEndDate || undefined,
-    dealRemark: form.dealRemark || undefined,
+    channelTypeId: form.channelTypeId,
+    rentalArea: Number(form.rentalArea),
+    contractTotalAmount: Number(form.contractTotalAmount),
+    unitPrice: Number(form.unitPrice),
+    contractSignDate: form.contractSignDate,
+    contractStartDate: form.contractStartDate,
+    contractEndDate: form.contractEndDate,
+    dealRemark: form.dealRemark.trim(),
   }
-  if (form.channelTypeId && selectedChannel.value?.instanceType === 'agency') {
-    payload.channelInstanceId = form.channelInstanceId
-  } else if (form.channelTypeId) {
-    payload.channelInstanceName = form.channelInstanceName || undefined
+  if (form.channelTypeId) {
+    appendChannelInstancePayload(
+      payload,
+      selectedChannel.value,
+      form.channelInstanceId,
+      form.channelInstanceName,
+    )
   }
   return payload
 }
@@ -610,7 +720,7 @@ async function fetchList() {
 async function fetchOptions() {
   const [cl, hl, chl, rentalsRes] = await Promise.all([
     getClientList({ page: 1, size: 200 }),
-    getHouseList({ page: 1, size: 200, houseStatus: 'idle' }),
+    getHouseList({ page: 1, size: 200, houseStatus: 'rentable' }),
     getChannelList({ page: 1, size: 50 }),
     getInternalRentList({ page: 1, size: 200, status: 'active' }),
   ])
@@ -640,25 +750,20 @@ function resetForm() {
   form.channelInstanceName = ''
   form.rentalArea = ''
   form.contractTotalAmount = ''
+  form.unitPrice = ''
   form.contractSignDate = ''
   form.contractStartDate = ''
   form.contractEndDate = ''
   form.dealRemark = ''
   selectedChannel.value = null
-  agencyList.value = []
   formRef.value?.resetFields()
 }
 
 async function onChannelChange(id: number | undefined) {
   form.channelInstanceId = undefined
   form.channelInstanceName = ''
-  agencyList.value = []
   if (id) {
     selectedChannel.value = channelList.value.find((c) => c.id === id) || null
-    if (selectedChannel.value?.instanceType === 'agency') {
-      const res = await getAgencyList(id, { page: 1, size: 200 })
-      agencyList.value = res.records
-    }
   } else {
     selectedChannel.value = null
   }
@@ -692,6 +797,7 @@ async function openEditDialog(id: number) {
     form.channelInstanceName = d.channelInstanceName || ''
     form.rentalArea = d.rentalArea ? String(d.rentalArea) : ''
     form.contractTotalAmount = d.contractTotalAmount ? String(d.contractTotalAmount) : ''
+    form.unitPrice = d.unitPrice ? String(d.unitPrice) : ''
     form.contractSignDate = d.contractSignDate
     form.contractStartDate = d.contractStartDate
     form.contractEndDate = d.contractEndDate || ''
@@ -720,6 +826,17 @@ async function handleSubmit() {
 
   const valid = await formRef.value?.validate().catch(() => false)
   if (!valid) return
+
+  const channelInstanceError = validateChannelInstance(
+    selectedChannel.value,
+    form.channelInstanceId,
+    form.channelInstanceName,
+  )
+  if (channelInstanceError) {
+    ElMessage.error(channelInstanceError)
+    return
+  }
+
   submitLoading.value = true
   try {
     const payload = buildDealPayload()
@@ -763,17 +880,17 @@ async function openClientDetailPopup(id: number) {
   clientDetail.value = null
   clientDeals.value = []
   clientDetailVisible.value = true
-  try {
-    const [d, dealsRes] = await Promise.all([
-      getClientDetail(id),
-      getDealList({ clientId: id, size: 50 }),
-    ])
-    clientDetail.value = d
-    clientDeals.value = dealsRes.records
-  } catch {
+  const [detailResult, dealsResult] = await Promise.allSettled([
+    getClientDetail(id),
+    getDealList({ clientId: id, size: 50 }),
+  ])
+  if (detailResult.status === 'rejected') {
     ElMessage.error('获取客户详情失败')
     clientDetailVisible.value = false
+    return
   }
+  clientDetail.value = detailResult.value
+  clientDeals.value = dealsResult.status === 'fulfilled' ? dealsResult.value.records : []
 }
 
 async function openHouseDetailPopup(id: number) {
@@ -899,6 +1016,7 @@ function openDraftCreate() {
   isEdit.value = false; isDraft.value = true; editId.value = 0; draftId.value = 0
   resetForm()
   dialogVisible.value = true
+  nextTick(() => formRef.value?.clearValidate())
 }
 
 async function editDraft(row: DealDraftRecord) {
@@ -907,6 +1025,8 @@ async function editDraft(row: DealDraftRecord) {
   resetForm()
   fillFormFromDealDraft(row)
   dialogVisible.value = true
+  await nextTick()
+  formRef.value?.clearValidate()
 }
 
 async function useDraft(row: DealDraftRecord) {
@@ -942,4 +1062,6 @@ onMounted(() => { fetchList(); fetchOptions() })
 .section-title { margin: 20px 0 12px; }
 .pagination-wrap { display: flex; justify-content: flex-end; margin-top: 16px; }
 .client-check-row { display: flex; gap: 8px; align-items: center; width: 100%; }
+.deal-form-grid :deep(.el-form-item) { margin-bottom: 18px; }
+.deal-form-remark { margin-top: 4px; margin-bottom: 0; }
 </style>
