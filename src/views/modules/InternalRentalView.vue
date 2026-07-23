@@ -72,8 +72,8 @@
         <el-table-column label="租赁面积" width="100" align="right">
           <template #default="{ row }">{{ row.rentalArea }} ㎡</template>
         </el-table-column>
-        <el-table-column label="参考价格" width="120" align="right">
-          <template #default="{ row }">{{ row.referencePrice?.toLocaleString() }}{{ row.priceUnit ? `/ ${row.priceUnit}` : '' }}</template>
+        <el-table-column label="参考价格" width="140" align="right">
+          <template #default="{ row }">{{ formatPriceWithUnit(row.referencePrice, row.priceUnit) }}</template>
         </el-table-column>
         <el-table-column prop="usageRequirement" label="用途要求" min-width="120" show-overflow-tooltip />
         <el-table-column prop="rentalDurationRequirement" label="租期要求" min-width="120" show-overflow-tooltip />
@@ -103,7 +103,7 @@
     >
       <el-form ref="formRef" :model="form" :rules="formRules" label-width="100px">
         <el-form-item label="房源" prop="houseId">
-          <el-select v-model="form.houseId" filterable placeholder="选择房源" style="width:100%">
+          <el-select v-model="form.houseId" filterable placeholder="选择房源" style="width:100%" @change="onHouseChange">
             <el-option v-for="h in formHouseList" :key="h.id" :value="h.id" :label="h.houseName" />
           </el-select>
         </el-form-item>
@@ -129,24 +129,16 @@
           </el-col>
           <el-col :span="12">
             <el-form-item label="价格单位">
-              <el-select v-model="form.priceUnit" style="width:100%">
-                <el-option value="天" label="/ 天" />
-                <el-option value="月" label="/ 月" />
-                <el-option value="年" label="/ 年" />
+              <el-select v-model="form.priceUnit" clearable placeholder="请选择" style="width:100%">
+                <el-option value="天/平米" label="/天/平米" />
+                <el-option value="月" label="/月" />
+                <el-option value="年" label="/年" />
               </el-select>
             </el-form-item>
           </el-col>
         </el-row>
-        <el-form-item v-if="form.priceUnit && numRefPrice" class="price-calc-row">
-          <template v-if="form.priceUnit === '天'">
-            折合约 / 月：{{ calcMonthly.toLocaleString() }}，/ 年：{{ calcYearly.toLocaleString() }}
-          </template>
-          <template v-else-if="form.priceUnit === '月'">
-            折合约 / 天：{{ calcDaily.toLocaleString() }}，/ 年：{{ calcYearly.toLocaleString() }}
-          </template>
-          <template v-else>
-            折合约 / 天：{{ calcDaily.toLocaleString() }}，/ 月：{{ calcMonthly.toLocaleString() }}
-          </template>
+        <el-form-item v-if="priceCalcHint" class="price-calc-row">
+          {{ priceCalcHint }}
         </el-form-item>
         <el-form-item label="看房联系人">
           <el-select v-model="form.viewingUserIds" multiple filterable placeholder="选择内部用户" style="width:100%">
@@ -199,7 +191,7 @@
           <el-descriptions-item label="发起日期">{{ detail.initiateDate }}</el-descriptions-item>
           <el-descriptions-item label="停止日期">{{ detail.stopDate || '-' }}</el-descriptions-item>
           <el-descriptions-item label="租赁面积">{{ detail.rentalArea }} ㎡</el-descriptions-item>
-          <el-descriptions-item label="参考价格">{{ detail.referencePrice?.toLocaleString() }}{{ detail.priceUnit ? ` / ${detail.priceUnit}` : '' }}
+          <el-descriptions-item label="参考价格">{{ formatPriceWithUnit(detail.referencePrice, detail.priceUnit) }}
             <div v-if="detailPriceCalc" class="price-calc-detail">{{ detailPriceCalc }}</div>
           </el-descriptions-item>
           <el-descriptions-item label="用途要求">{{ detail.usageRequirement || '-' }}</el-descriptions-item>
@@ -357,7 +349,7 @@ import { getInternalRentList, getInternalRentDetail, createInternalRent, updateI
   type InternalRentRecord,
   type InternalRentPosterGenerateParams,
 } from '@/api/internal-rent'
-import { getHouseList, resolveImageUrl, type HouseDetail } from '@/api/house'
+import { getAllHouseList, resolveImageUrl, type HouseDetail } from '@/api/house'
 import { getStaffList, type StaffRecord } from '@/api/system'
 import { useUserStore } from '@/stores/user'
 import { DEFAULT_POSTER_FIELD_KEYS, INTERNAL_RENT_POSTER_FIELDS } from '@/constants/internal-rent-poster'
@@ -366,7 +358,12 @@ import { houseStatusTagType, isHouseAvailableForDeal } from '@/constants/house-s
 const posterFieldOptions = INTERNAL_RENT_POSTER_FIELDS
 
 const userStore = useUserStore()
-const canManageInternalRent = computed(() => userStore.canWrite && userStore.roleCode !== 'SALES')
+const canManageInternalRent = computed(() => {
+  if (!userStore.canWrite) return false
+  const code = userStore.roleCode
+  // 项目部管理员、成员仅可查看；经营部及以上可操作
+  return code !== 'PROJECT_ADMIN' && code !== 'SALES'
+})
 
 const loading = ref(false)
 const dialogVisible = ref(false)
@@ -376,7 +373,10 @@ const editId = ref(0)
 const formRef = ref<FormInstance>()
 const tableData = ref<InternalRentRecord[]>([])
 const total = ref(0)
-const houseList = ref<{ id: number; houseName: string }[]>([])
+type HouseOption = { id: number; houseName: string; houseStatus?: string; rentableArea?: number | null }
+
+const houseList = ref<HouseOption[]>([])
+const rentableHouseList = ref<HouseOption[]>([])
 const staffList = ref<StaffRecord[]>([])
 const generatePosterLoading = ref(false)
 const posterConfigVisible = ref(false)
@@ -385,10 +385,6 @@ const posterConfig = reactive({
   fields: [...DEFAULT_POSTER_FIELD_KEYS] as string[],
   imageUrls: [] as string[],
 })
-
-const formHouseList = computed(() =>
-  houseList.value.filter((h) => isHouseAvailableForDeal((h as any).houseStatus)),
-)
 
 const detailVisible = ref(false)
 const detail = ref<InternalRentRecord | null>(null)
@@ -419,6 +415,28 @@ const form = reactive({
   otherDescription: '',
 })
 
+/** 新增/编辑可选房源：服务端可租 + 编辑时保留当前已选房源 */
+const formHouseList = computed(() => {
+  const byId = new Map<number, HouseOption>()
+  for (const h of rentableHouseList.value) {
+    byId.set(h.id, h)
+  }
+  if (form.houseId != null) {
+    const current = houseList.value.find((h) => h.id === form.houseId)
+      || rentableHouseList.value.find((h) => h.id === form.houseId)
+    if (current) {
+      byId.set(current.id, current)
+    } else if (detail.value?.house && detail.value.houseId === form.houseId) {
+      byId.set(form.houseId, {
+        id: form.houseId,
+        houseName: detail.value.house.houseName,
+        houseStatus: detail.value.house.houseStatus,
+      })
+    }
+  }
+  return [...byId.values()]
+})
+
 const formRules: FormRules = {
   houseId: [{ required: true, message: '请选择房源', trigger: 'change' }],
   initiateDate: [{ required: true, message: '请选择发起日期', trigger: 'blur' }],
@@ -428,39 +446,64 @@ const formRules: FormRules = {
 
 function formatTime(s: string) { return s ? new Date(s).toLocaleString('zh-CN') : '-' }
 
+function formatPriceWithUnit(price?: number | null, unit?: string | null) {
+  if (price == null) return '-'
+  const text = price.toLocaleString()
+  if (!unit) return text
+  return `${text}/${unit}`
+}
+
+/** 按单位折合展示；天/平米 与 月/年 互算时乘/除租赁面积 */
+function buildPriceCalcHint(price: number, unit: string, area: number) {
+  if (!price || !unit) return ''
+  if (unit === '天/平米' || unit === '天') {
+    if (!area) return '折合 /月、/年 需填写租赁面积（参考价 × 天数 × 面积）'
+    const monthly = Math.round(price * 30 * area)
+    const yearly = Math.round(price * 365 * area)
+    return `折合约 /月：${monthly.toLocaleString()}，/年：${yearly.toLocaleString()}（参考价 × 天数 × 面积）`
+  }
+  if (unit === '月') {
+    const yearly = Math.round(price * 12)
+    if (!area) return `折合约 /年：${yearly.toLocaleString()}；折合 /天/平米 需填写租赁面积`
+    // 月租金 → 年 → 天：先 ×12 再 ÷365，再 ÷面积
+    const perDaySqm = (price * 12) / 365 / area
+    return `折合约 /年：${yearly.toLocaleString()}，/天/平米：${formatUnitPrice(perDaySqm)}（参考价 × 12 ÷ 365 ÷ 面积）`
+  }
+  if (unit === '年') {
+    const monthly = Math.round(price / 12)
+    if (!area) return `折合约 /月：${monthly.toLocaleString()}；折合 /天/平米 需填写租赁面积`
+    const perDaySqm = price / 365 / area
+    return `折合约 /月：${monthly.toLocaleString()}，/天/平米：${formatUnitPrice(perDaySqm)}（参考价 ÷ 365 ÷ 面积）`
+  }
+  return ''
+}
+
+function formatUnitPrice(n: number) {
+  if (!Number.isFinite(n)) return '-'
+  return Number(n.toFixed(4)).toLocaleString()
+}
+
 const numRefPrice = computed(() => {
   const n = Number(form.referencePrice)
   return isNaN(n) ? 0 : n
 })
 
-const calcDaily = computed(() => {
-  if (!numRefPrice.value) return 0
-  if (form.priceUnit === '天') return numRefPrice.value
-  if (form.priceUnit === '月') return Math.round(numRefPrice.value / 30)
-  return Math.round(numRefPrice.value / 365)
+const numRentalArea = computed(() => {
+  const n = Number(form.rentalArea)
+  return isNaN(n) ? 0 : n
 })
 
-const calcMonthly = computed(() => {
-  if (!numRefPrice.value) return 0
-  if (form.priceUnit === '月') return numRefPrice.value
-  if (form.priceUnit === '天') return Math.round(numRefPrice.value * 30)
-  return Math.round(numRefPrice.value / 12)
-})
-
-const calcYearly = computed(() => {
-  if (!numRefPrice.value) return 0
-  if (form.priceUnit === '年') return numRefPrice.value
-  if (form.priceUnit === '月') return Math.round(numRefPrice.value * 12)
-  return Math.round(numRefPrice.value * 365)
+const priceCalcHint = computed(() => {
+  if (!form.priceUnit || !numRefPrice.value) return ''
+  return buildPriceCalcHint(numRefPrice.value, form.priceUnit, numRentalArea.value)
 })
 
 const detailPriceCalc = computed(() => {
   const p = detail.value?.referencePrice
   const u = detail.value?.priceUnit
-  if (!p || !u) return ''
-  if (u === '天') return `折合约 / 月：${(p * 30).toLocaleString()}，/ 年：${(p * 365).toLocaleString()}`
-  if (u === '月') return `折合约 / 天：${Math.round(p / 30).toLocaleString()}，/ 年：${(p * 12).toLocaleString()}`
-  return `折合约 / 天：${Math.round(p / 365).toLocaleString()}，/ 月：${Math.round(p / 12).toLocaleString()}`
+  const area = detail.value?.rentalArea
+  if (p == null || !u) return ''
+  return buildPriceCalcHint(Number(p), u, Number(area) || 0)
 })
 
 async function fetchList() {
@@ -479,12 +522,32 @@ async function fetchList() {
 }
 
 async function fetchOptions() {
-  const [housesRes, staffRes] = await Promise.all([
-    getHouseList({ page: 1, size: 200 }),
+  const [allResult, rentableResult, staffResult] = await Promise.allSettled([
+    getAllHouseList(),
+    getAllHouseList({ houseStatus: 'rentable' }),
     getStaffList({ page: 1, size: 200 }),
   ])
-  houseList.value = housesRes.records.map((h: any) => ({ id: h.id, houseName: h.houseName, houseStatus: h.houseStatus }))
-  staffList.value = staffRes.records
+  if (allResult.status === 'fulfilled') {
+    houseList.value = allResult.value.map((h) => ({
+      id: h.id,
+      houseName: h.houseName,
+      houseStatus: h.houseStatus,
+      rentableArea: h.rentableArea,
+    }))
+  }
+  if (rentableResult.status === 'fulfilled') {
+    rentableHouseList.value = rentableResult.value
+      .filter((h) => isHouseAvailableForDeal(h.houseStatus))
+      .map((h) => ({
+        id: h.id,
+        houseName: h.houseName,
+        houseStatus: h.houseStatus,
+        rentableArea: h.rentableArea,
+      }))
+  }
+  if (staffResult.status === 'fulfilled') {
+    staffList.value = staffResult.value.records
+  }
 }
 
 function handleSearch() { query.page = 1; fetchList() }
@@ -511,6 +574,20 @@ function resetForm() {
   formRef.value?.resetFields()
 }
 
+/** 选择房源后自动填入适租面积 */
+function onHouseChange(houseId?: number) {
+  if (houseId == null) {
+    form.rentalArea = ''
+    return
+  }
+  const house = formHouseList.value.find((h) => h.id === houseId)
+    || houseList.value.find((h) => h.id === houseId)
+    || rentableHouseList.value.find((h) => h.id === houseId)
+  if (house?.rentableArea != null) {
+    form.rentalArea = String(house.rentableArea)
+  }
+}
+
 function buildSavePayload() {
   return {
     houseId: form.houseId!,
@@ -525,16 +602,22 @@ function buildSavePayload() {
   }
 }
 
-function openCreateDialog() {
+async function openCreateDialog() {
   isEdit.value = false; editId.value = 0
   resetForm()
   dialogVisible.value = true
+  try {
+    await fetchOptions()
+  } catch {
+    ElMessage.warning('房源选项刷新失败，可关闭后重试')
+  }
 }
 
 async function openEditDialog(id: number) {
   isEdit.value = true; editId.value = id
   resetForm()
   try {
+    await fetchOptions()
     const d = await getInternalRentDetail(id)
     form.houseId = d.houseId
     form.initiateDate = d.initiateDate
@@ -545,6 +628,13 @@ async function openEditDialog(id: number) {
     form.usageRequirement = d.usageRequirement || ''
     form.rentalDurationRequirement = d.rentalDurationRequirement || ''
     form.otherDescription = d.otherDescription || ''
+    if (d.house && !houseList.value.some((h) => h.id === d.houseId)) {
+      houseList.value.push({
+        id: d.houseId,
+        houseName: d.house.houseName,
+        houseStatus: d.house.houseStatus,
+      })
+    }
     dialogVisible.value = true
   } catch { ElMessage.error('获取招租详情失败') }
 }

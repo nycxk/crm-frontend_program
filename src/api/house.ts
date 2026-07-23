@@ -1,4 +1,5 @@
 import { get, post, put, del } from '@/utils/request'
+import axios from 'axios'
 
 export interface PriceRecord {
   id: number
@@ -110,6 +111,54 @@ export function resolveImageUrl(url: string): string {
 
 export function getHouseList(query: HouseQuery): Promise<PageResult<HouseRecord>> {
   return get('/api/houses', query)
+}
+
+/** 按当前筛选条件导出房源 Excel（字段与列表一致） */
+export async function exportHouseList(query: Omit<HouseQuery, 'page' | 'size'> = {}) {
+  const base = (import.meta.env.VITE_API_BASE_URL as string) || ''
+  const token = localStorage.getItem('token')
+  const resp = await axios.get(`${base}/api/houses/export`, {
+    params: query,
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    responseType: 'blob',
+  })
+  const contentTypeHeader = resp.headers['content-type']
+  const contentType = typeof contentTypeHeader === 'string' ? contentTypeHeader : ''
+  if (contentType.includes('application/json')) {
+    const text = await (resp.data as Blob).text()
+    const json = JSON.parse(text) as { message?: string }
+    throw new Error(json.message || '导出失败')
+  }
+  const disposition = resp.headers['content-disposition'] as string | undefined
+  let filename = `房源列表_${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.xlsx`
+  const match = disposition?.match(/filename\*=UTF-8''([^;]+)/i)
+  if (match?.[1]) {
+    filename = decodeURIComponent(match[1])
+  }
+  const url = window.URL.createObjectURL(new Blob([resp.data]))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  window.URL.revokeObjectURL(url)
+}
+
+/** 分页拉全量房源（不受单次 size 上限限制） */
+export async function getAllHouseList(
+  query: Omit<HouseQuery, 'page' | 'size'> = {},
+  pageSize = 500,
+): Promise<HouseRecord[]> {
+  const all: HouseRecord[] = []
+  let page = 1
+  while (true) {
+    const res = await getHouseList({ ...query, page, size: pageSize })
+    all.push(...res.records)
+    if (all.length >= res.total || res.records.length === 0) break
+    page++
+  }
+  return all
 }
 export function getHouseDetail(id: number): Promise<HouseDetail> {
   return get(`/api/houses/${id}`)

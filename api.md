@@ -1854,10 +1854,14 @@ Response:
 
 **电话脱敏**（客户关联的 `contacts`、联系人列表/详情、`GET /api/clients/{id}/contacts`、来访中的联系人、公海客户联系人）：
 
-- `contact.created_by` 为**当前登录用户**时，返回完整手机号
+- 满足以下**任一**条件时返回完整手机号：
+  1. `contact.created_by` 为当前登录用户（联系人录入人）
+  2. 当前登录用户在该客户的 `client_user_relation` 中有直接关联
 - 否则 `contactPhone` 为脱敏格式，如 `138****8000`（11 位大陆手机号）
+- 领导等仅通过下属用户数据权限可见客户、本人非录入人且不在 `client_user_relation` 中时，**仍脱敏**
+- 公海客户已清空关联：非录入人一律脱敏；录入人仍可见完整号
 
-> 联系人模块列表仅展示已绑定到有权查看客户的联系人；**列表是否可见**仍按客户数据权限，**手机号是否脱敏**按联系人创建人判断。
+> 联系人模块列表仅展示已绑定到有权查看客户的联系人；**列表是否可见**仍按客户数据权限（含领导可见下属客户），**手机号是否脱敏**按录入人 **或** `client_user_relation` 判断。
 
 ### 6.2 新增客户
 
@@ -1939,7 +1943,7 @@ Query: page、size、keyword（同 6.3，无 status 参数）
 说明:
 - 仅返回 `client_status=public_pool` 的客户
 - 所有登录用户均可查看
-- 关联联系人 `contactPhone` 按 [6.1 脱敏规则](#61-数据权限与电话脱敏) 返回（本人创建的联系人可见完整号码）
+- 关联联系人 `contactPhone` 按 [6.1 脱敏规则](#61-数据权限与电话脱敏) 返回（录入人或 `client_user_relation` 关联用户可见完整号码）
 
 Response: 结构同 6.3 客户分页
 ```
@@ -1952,7 +1956,7 @@ POST /api/clients/public-pool/{id}/claim
 说明:
 - 仅 `public_pool` 状态可认领
 - 认领后：`client_status=mine`，为当前用户在 `client_user_relation` 写入关联，`claimTime` 更新为当前时间（`created_by` 不变）
-- 返回认领后的客户信息（联系人电话按 [6.1 脱敏规则](#61-数据权限与电话脱敏)，本人创建的联系人可见完整号码）
+- 返回认领后的客户信息（联系人电话按 [6.1 脱敏规则](#61-数据权限与电话脱敏)，录入人或认领人可见完整号码）
 
 Response.data: ClientVO（同列表单条）
 ```
@@ -2183,7 +2187,7 @@ Response:
 | createTime | datetime | 创建时间 |
 | updateTime | datetime | 更新时间 |
 
-> `contacts[].contactPhone` 按 [6.1 脱敏规则](#61-数据权限与电话脱敏) 返回；非本人创建的联系人为 `138****8000` 格式。
+> `contacts[].contactPhone` 按 [6.1 脱敏规则](#61-数据权限与电话脱敏) 返回；非录入人且不在该客户 `client_user_relation` 中时为 `138****8000` 格式。
 
 ### 6.4 客户详情
 
@@ -2316,7 +2320,7 @@ DELETE /api/clients/{id}/contacts/{contactId}
 |------|------|------|
 | id | long | 联系人 ID |
 | contactName | string | 联系人姓名 |
-| contactPhone | string | 联系电话；非本人创建的记录为脱敏格式 |
+| contactPhone | string | 联系电话；非录入人且不在该客户 `client_user_relation` 中时为脱敏格式 |
 | model | string | 从属类型，**必填枚举**：`个人`、`中介公司`、`其他组织` |
 | agencyId | long | 关联中介公司 ID；`model=中介公司` 时必填，其它类型为 null |
 | agencyName | string | 中介公司名称（列表/详情 enrich 填充） |
@@ -2723,6 +2727,7 @@ DELETE /api/visit-drafts/{id}
 | 方法 | 端点 | 说明 |
 |------|------|------|
 | GET | `/api/houses` | 房源分页列表（按项目部数据权限） |
+| GET | `/api/houses/export` | 按筛选条件导出房源 Excel（字段与列表一致；评估价列仅有权限时包含） |
 | GET | `/api/houses/{id}` | 房源详情 |
 | POST | `/api/houses` | 新增房源 |
 | PUT | `/api/houses/{id}` | 修改房源 |
@@ -3358,7 +3363,9 @@ DELETE /api/deal-drafts/{id}
 
 ## 10 内部招租 API
 
-关联表 `internal_rent`；**列表/详情/改删**按关联房源所属项目部做数据权限，规则与 [8.1 房源数据权限](#81-数据权限) 一致。新建、修改时**房源**须在权限范围内。**看房联系人**关联系统内部用户（`users` 表），非客户联系人模块。
+关联表 `internal_rent`；**列表/详情**按关联房源所属项目部做数据权限，规则与 [8.1 房源数据权限](#81-数据权限) 一致。新建、修改时**房源**须在权限范围内。**看房联系人**关联系统内部用户（`users` 表），非客户联系人模块。
+
+**写操作权限**（新增 / 修改 / 删除 / 生成海报）：`SYSTEM_ADMIN`、`MARKETING_ADMIN`、`OPERATE_ADMIN` 可操作；`PROJECT_ADMIN`（项目部管理员）、`SALES`（成员）、`COMPANY_LEADER`（公司领导）仅可查看，调用写接口返回 403。
 
 **招租状态**：`stopDate` 为空表示**正在招租**；有值表示**停止招租**。列表可通过 `status` 参数筛选：`active`（正在招租）、`stopped`（停止招租）。新增成交（[§9.2](#92-新增成交)）成功后，系统会将关联房源下所有未停止的内部招租自动写入 `stopDate`（合同签订日）。
 
@@ -3437,7 +3444,7 @@ POST /api/internal-rents
   "viewingUserIds": [2, 3],
   "rentalArea": 200.5,
   "referencePrice": 12000,
-  "priceUnit": "月",
+  "priceUnit": "天/平米",
   "usageRequirement": "零售优先",
   "rentalDurationRequirement": "不少于一年",
   "otherDescription": null
@@ -3445,6 +3452,7 @@ POST /api/internal-rents
 ```
 
 - `houseId`、`initiateDate`、`rentalArea`、`referencePrice` 必填；`stopDate`、`viewingUserIds` 及各文本字段可选。
+- `priceUnit` 可选：`天/平米`、`月`、`年`（展示为 `/天/平米`、`/月`、`/年`）。选 `天/平米` 时前端折合 `/月`、`/年` 为：参考价 × 30/365 × 租赁面积；选 `月` 时 `/天/平米` = 参考价 × 12 ÷ 365 ÷ 租赁面积；选 `年` 时 `/天/平米` = 参考价 ÷ 365 ÷ 租赁面积。库中仍只存参考价与单位，不做换算。
 - `viewingUserIds` 可空或省略；元素为系统用户 ID（`users.id`），须存在。
 - `stopDate` 不得早于 `initiateDate`。
 - `initiateUserId` 由后端写入为当前登录用户。

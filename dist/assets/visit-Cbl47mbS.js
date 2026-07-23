@@ -1,1 +1,0 @@
-import{af as t,ap as a,aq as e}from"./index-DoUxWyJx.js";function r(i){return t("/api/visits",i)}function u(i){return t(`/api/visits/${i}`)}function p(i){return a("/api/visits",i)}function o(i,s){return e(`/api/visits/${i}`,s)}export{r as a,p as c,u as g,o as u};

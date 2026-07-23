@@ -1,1 +1,0 @@
-import{af as e,aq as a,ap as r}from"./index-DoUxWyJx.js";function s(n){return e("/api/internal-rents",n)}function u(n){return e(`/api/internal-rents/${n}`)}function p(n){return r("/api/internal-rents",n)}function l(n,t){return a(`/api/internal-rents/${n}`,t)}function o(n,t){return r(`/api/internal-rents/${n}/poster`,t)}export{u as a,s as b,p as c,o as g,l as u};

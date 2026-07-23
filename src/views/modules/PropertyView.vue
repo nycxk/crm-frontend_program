@@ -81,7 +81,10 @@
       <template #header>
         <div class="card-header">
           <span>房源列表</span>
-          <el-button v-if="userStore.canWrite" type="primary" @click="openCreateDialog">新增房源</el-button>
+          <div class="header-actions">
+            <el-button :loading="exportLoading" @click="handleExport">导出</el-button>
+            <el-button v-if="userStore.canWrite" type="primary" @click="openCreateDialog">新增房源</el-button>
+          </div>
         </div>
       </template>
 
@@ -481,6 +484,7 @@ import type { FormInstance, FormRules } from 'element-plus'
 import type { UploadRequestOptions } from 'element-plus'
 import {
   getHouseList,
+  exportHouseList,
   getHouseDetail,
   createHouse,
   updateHouse,
@@ -516,6 +520,7 @@ const houseStatusEditableOptions = HOUSE_STATUS_EDITABLE_OPTIONS
 const userStore = useUserStore()
 
 const loading = ref(false)
+const exportLoading = ref(false)
 const dialogVisible = ref(false)
 const submitLoading = ref(false)
 const uploading = ref(false)
@@ -660,6 +665,30 @@ async function fetchList() {
     total.value = res.total
   } finally {
     loading.value = false
+  }
+}
+
+function buildFilterParams() {
+  const params: Record<string, string | number> = {}
+  if (query.keyword) params.keyword = query.keyword
+  if (query.operationDepartmentId) params.operationDepartmentId = query.operationDepartmentId
+  if (query.departmentId) params.departmentId = query.departmentId
+  if (query.houseStatus) params.houseStatus = query.houseStatus
+  if (query.businessType) params.businessType = query.businessType
+  if (query.rentableAreaMin != null) params.rentableAreaMin = query.rentableAreaMin
+  if (query.rentableAreaMax != null) params.rentableAreaMax = query.rentableAreaMax
+  return params
+}
+
+async function handleExport() {
+  exportLoading.value = true
+  try {
+    await exportHouseList(buildFilterParams())
+    ElMessage.success('导出成功')
+  } catch (e: any) {
+    ElMessage.error(e?.message || '导出失败')
+  } finally {
+    exportLoading.value = false
   }
 }
 
@@ -1036,6 +1065,12 @@ onMounted(() => {
 .card-header {
   display: flex;
   justify-content: space-between;
+  align-items: center;
+}
+
+.header-actions {
+  display: flex;
+  gap: 8px;
   align-items: center;
 }
 
